@@ -323,6 +323,13 @@ jobs:
           VERSION="${{ needs.check-version.outputs.version }}"
           
           echo "🔄 更新 Release ${VERSION} 中的 GOST 二进制文件..."
+
+          # A tag can exist without a GitHub Release, especially after importing
+          # an upstream repository. Building images must not fail in that case.
+          if ! gh release view "${VERSION}" >/dev/null 2>&1; then
+            echo "ℹ️ Release ${VERSION} 不存在，跳过 GOST 产物上传"
+            exit 0
+          fi
           
           gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
           gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
