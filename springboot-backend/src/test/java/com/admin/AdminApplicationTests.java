@@ -13,6 +13,7 @@ import com.admin.service.UserTunnelService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 import javax.annotation.Resource;
 import java.util.Date;
@@ -20,6 +21,7 @@ import java.util.List;
 
 
 @SpringBootTest
+@ActiveProfiles("test")
 class AdminApplicationTests {
 
 

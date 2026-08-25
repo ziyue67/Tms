@@ -187,9 +187,9 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
-      - name: Build Java JAR
+      - name: Test and build Java JAR
         working-directory: ./springboot-backend
-        run: mvn clean package -DskipTests
+        run: mvn clean package
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
