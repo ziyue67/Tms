@@ -3,6 +3,7 @@ package com.admin.controller;
 import com.admin.common.dto.RegisterDto;
 import com.admin.common.dto.SendCodeDto;
 import com.admin.common.dto.LoginDto;
+import com.admin.common.dto.ResetPasswordDto;
 import com.admin.common.lang.R;
 import com.admin.service.AuthService;
 import com.admin.service.UserService;
@@ -32,6 +33,24 @@ public class AuthController {
         } catch (IllegalArgumentException e) {
             return R.err(e.getMessage());
         }
+    }
+
+    @PostMapping({"/send-reset-code", "/forgot-password"})
+    public R sendResetCode(@Validated @RequestBody SendCodeDto dto, HttpServletRequest request) {
+        try {
+            authService.sendResetCode(dto.getEmail(), clientIp(request));
+            // Same response for known and unknown email addresses prevents enumeration.
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            // Keep rate-limit/configuration errors useful without exposing account existence.
+            return R.err(e.getMessage());
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public R resetPassword(@Validated @RequestBody ResetPasswordDto dto) {
+        try { return authService.resetPassword(dto); }
+        catch (IllegalArgumentException e) { return R.err(e.getMessage()); }
     }
 
     @PostMapping("/register")

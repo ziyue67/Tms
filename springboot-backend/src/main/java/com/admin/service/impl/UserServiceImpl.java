@@ -15,6 +15,7 @@ import com.admin.mapper.UserMapper;
 import com.admin.mapper.UserTunnelMapper;
 import com.admin.service.*;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -383,9 +384,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * @return 登录验证结果
      */
     private LoginValidationResult validateUserCredentials(LoginDto loginDto) {
-        QueryWrapper<User> query = new QueryWrapper<User>().eq("user", loginDto.getUsername());
+        LambdaQueryWrapper<User> query = new LambdaQueryWrapper<User>().eq(User::getUser, loginDto.getUsername());
         if (loginDto.getUsername() != null && loginDto.getUsername().contains("@")) {
-            query = new QueryWrapper<User>().and(w -> w.eq("user", loginDto.getUsername()).or().eq("email", loginDto.getUsername().toLowerCase()));
+            query = new LambdaQueryWrapper<User>().and(w -> w.eq(User::getUser, loginDto.getUsername()).or().eq(User::getEmail, loginDto.getUsername().toLowerCase()));
         }
         User user = this.getOne(query);
         if (user == null) {
@@ -429,9 +430,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * @return 验证结果响应
      */
     private R validateUsernameUniqueness(String username, Long excludeUserId) {
-        QueryWrapper<User> queryWrapper = new QueryWrapper<User>().eq("user", username);
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<User>().eq(User::getUser, username);
         if (excludeUserId != null) {
-            queryWrapper.ne("id", excludeUserId);
+            queryWrapper.ne(User::getId, excludeUserId);
         }
         
         User existUser = this.getOne(queryWrapper);

@@ -58,6 +58,30 @@ All payment credentials are saved only through the administrator's website confi
 | **面板端** | 一台机器即可 | 中央管理面板 | 是(脚本自动装) |
 | **节点端** | 每台转发机 | gost 裸二进制 | 否 |
 
+### 使用外部 MySQL / PostgreSQL（不启动数据库容器）
+
+默认的 `docker-compose-v4.yml` / `docker-compose-v6.yml` 会启动内置 MySQL。已有数据库服务器时，使用对应的 external Compose 文件，文件只启动 TMS 后端和前端：
+
+```bash
+# 外部 MySQL
+export DB_URL='jdbc:mysql://db.example.com:3306/gost?useUnicode=true&useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai'
+export DB_USER='gost'
+export DB_PASSWORD='请使用部署环境的密码'
+export JWT_SECRET='请生成至少32位随机值'
+docker compose -f docker-compose-external-mysql.yml up -d
+
+# 外部 PostgreSQL（先执行 db/tms-postgres.sql）
+export DB_URL='jdbc:postgresql://db.example.com:5432/gost'
+export DB_USER='gost'
+export DB_PASSWORD='请使用部署环境的密码'
+export JWT_SECRET='请生成至少32位随机值'
+docker compose -f docker-compose-external-postgres.yml up -d
+```
+
+MySQL 外部库先导入 `gost.sql`，再导入 `springboot-backend/src/main/resources/db/tms-account-commerce.sql`（升级旧库也需要执行）。PostgreSQL 请使用仓库提供的 `springboot-backend/src/main/resources/db/tms-postgres.sql`，它包含基础面板、协议/线路和账号套餐表。`DB_URL` 优先级高于旧的 `DB_HOST`/`DB_NAME` 变量；密码、SMTP 密钥和支付密钥只放在服务器环境变量或部署平台 Secret 中，不要写入仓库。
+
+如果外部数据库限制容器网段访问，请把 TMS 主机地址加入白名单，并放行数据库端口；Compose 本身不会创建或删除外部数据库。
+
 <br>
 
 ### 第一步 · 装面板端

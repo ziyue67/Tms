@@ -1,10 +1,12 @@
 package com.admin.service;
 
 import com.admin.common.dto.RegisterDto;
+import com.admin.common.dto.ResetPasswordDto;
 import com.admin.common.lang.R;
 import com.admin.common.utils.JwtUtil;
 import com.admin.entity.User;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,13 +38,38 @@ public class AuthService {
         verification.send(normalized, clientIp);
     }
 
+    /** Sends a reset code when the address belongs to an account. The controller returns a generic response. */
+    public void sendResetCode(String email, String clientIp) {
+        String normalized = EmailVerificationService.normalize(email);
+        if (normalized.isBlank()) return;
+        EmailVerificationService.Purpose purpose = EmailVerificationService.Purpose.PASSWORD_RESET;
+        verification.checkSendRate(normalized, clientIp, purpose);
+        if (users.getOne(new QueryWrapper<User>().eq("email", normalized)) != null) {
+            verification.sendAfterRateCheck(normalized, purpose);
+        }
+    }
+
+    @Transactional
+    public R resetPassword(ResetPasswordDto dto) {
+        String email = EmailVerificationService.normalize(dto.getEmail());
+        User user = users.getOne(new QueryWrapper<User>().eq("email", email));
+        // Do not reveal whether the email exists or whether a code was valid.
+        if (user == null || !verification.consume(email, dto.getCode(), EmailVerificationService.Purpose.PASSWORD_RESET)) {
+            return R.err("验证码错误或已过期");
+        }
+        user.setPwd(passwordEncoder.encode(dto.getNewPassword()));
+        user.setUpdatedTime(System.currentTimeMillis());
+        users.updateById(user);
+        return R.ok();
+    }
+
     @Transactional
     public R register(RegisterDto dto) {
         String email = EmailVerificationService.normalize(dto.getEmail());
         if (users.getOne(new QueryWrapper<User>().eq("email", email)) != null) return R.err("邮箱已注册");
         String username = dto.getUsername() == null ? "" : dto.getUsername().trim();
         if (username.isEmpty()) username = email.substring(0, email.indexOf('@'));
-        if (users.getOne(new QueryWrapper<User>().eq("user", username)) != null) return R.err("用户名已存在");
+        if (users.getOne(new LambdaQueryWrapper<User>().eq(User::getUser, username)) != null) return R.err("用户名已存在");
         if (!verification.consume(email, dto.getCode())) return R.err("验证码错误或已过期");
 
         User user = new User();

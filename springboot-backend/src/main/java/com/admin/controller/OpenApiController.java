@@ -11,6 +11,7 @@ import com.admin.entity.UserTunnel;
 import com.admin.service.InboundService;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -60,7 +61,7 @@ public class OpenApiController extends BaseController {
             return R.err("密码不能为空");
         }
 
-        User userInfo = userService.getOne(new QueryWrapper<User>().eq("user", user));
+        User userInfo = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getUser, user));
         if (userInfo == null) {
             return R.err("鉴权失败");
         }

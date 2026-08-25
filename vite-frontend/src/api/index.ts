@@ -17,6 +17,8 @@ export interface LoginResponse {
 export const login = (data: LoginData) => Network.post<LoginResponse>("/user/login", data);
 export const sendRegisterCode = (email: string) => Network.post("/auth/send-register-code", { email });
 export const register = (data: { email: string; password: string; code: string; username?: string }) => Network.post<LoginResponse>("/auth/register", data);
+export const sendResetCode = (email: string) => Network.post("/auth/send-reset-code", { email });
+export const resetPassword = (data: { email: string; code: string; newPassword: string }) => Network.post("/auth/reset-password", data);
 export const getSubscriptionPlans = () => Network.get("/subscription/plans");
 export const getCurrentSubscription = () => Network.get("/subscription/current");
 export const getSubscriptionDashboard = () => Network.get("/subscription/dashboard");

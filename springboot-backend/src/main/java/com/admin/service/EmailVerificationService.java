@@ -3,7 +3,6 @@ package com.admin.service;
 import org.springframework.beans.factory.annotation.Value;
 import com.admin.entity.ViteConfig;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -35,20 +34,42 @@ public class EmailVerificationService {
     }
 
     public void send(String email, String clientIp) {
+        send(email, clientIp, Purpose.REGISTER);
+    }
+
+    public void send(String email, String clientIp, Purpose purpose) {
         String normalized = normalize(email);
-        enforceSendRate(emailSendWindows, normalized, 5, "该邮箱发送次数过多，请一小时后再试");
-        enforceSendRate(ipSendWindows, clientIp == null ? "unknown" : clientIp, 20, "该 IP 发送次数过多，请一小时后再试");
+        checkSendRate(normalized, clientIp, purpose);
+        sendCode(normalized, purpose);
+    }
+
+    /** Applies the rate limit even when the address is not registered (anti-abuse and anti-enumeration). */
+    public void checkSendRate(String email, String clientIp, Purpose purpose) {
+        String normalized = normalize(email);
+        String purposeKey = purpose.name().toLowerCase(java.util.Locale.ROOT);
+        enforceSendRate(emailSendWindows, purposeKey + ":" + normalized, 5, "该邮箱发送次数过多，请一小时后再试");
+        enforceSendRate(ipSendWindows, purposeKey + ":" + (clientIp == null ? "unknown" : clientIp), 20, "该 IP 发送次数过多，请一小时后再试");
+    }
+
+    public void sendAfterRateCheck(String email, Purpose purpose) {
+        sendCode(normalize(email), purpose);
+    }
+
+    private void sendCode(String normalized, Purpose purpose) {
+        String pendingKey = key(normalized, purpose);
         long cooldown = secondsConfig("email_code_cooldown_seconds", cooldownSeconds, 10, 3600);
         long expiry = secondsConfig("email_code_expire_seconds", expireSeconds, 60, 86400);
-        Entry old = pending.get(normalized);
+        Entry old = pending.get(pendingKey);
         long now = Instant.now().getEpochSecond();
         if (old != null && old.sentAt + cooldown > now) {
             throw new IllegalArgumentException("验证码发送过于频繁，请稍后再试");
         }
         String code = String.format("%06d", random.nextInt(1_000_000));
         JavaMailSenderImpl mailSender = createSender();
-        sendMessage(mailSender, normalized, "TMS 注册验证码", "你的 TMS 注册验证码是 " + code + "，有效期 " + (expiry / 60) + " 分钟。请勿将验证码泄露给他人。");
-        pending.put(normalized, new Entry(encoder.encode(code), now + expiry, now, 0));
+        String subject = purpose == Purpose.PASSWORD_RESET ? "TMS 密码重置验证码" : "TMS 注册验证码";
+        String action = purpose == Purpose.PASSWORD_RESET ? "重置密码" : "注册账号";
+        sendMessage(mailSender, normalized, subject, "你的 TMS " + action + "验证码是 " + code + "，有效期 " + (expiry / 60) + " 分钟。请勿将验证码泄露给他人。");
+        pending.put(pendingKey, new Entry(encoder.encode(code), now + expiry, now, 0));
     }
 
     public void sendTest(String email) {
@@ -58,22 +79,31 @@ public class EmailVerificationService {
     }
 
     public boolean consume(String email, String code) {
+        return consume(email, code, Purpose.REGISTER);
+    }
+
+    public boolean consume(String email, String code, Purpose purpose) {
         if (code == null || code.trim().isEmpty()) return false;
         String normalized = normalize(email);
-        Entry entry = pending.get(normalized);
+        String pendingKey = key(normalized, purpose);
+        Entry entry = pending.get(pendingKey);
         long now = Instant.now().getEpochSecond();
         if (entry == null) return false;
         if (entry.expiresAt < now) {
-            pending.remove(normalized, entry);
+            pending.remove(pendingKey, entry);
             return false;
         }
         if (!encoder.matches(code.trim(), entry.hash)) {
-            if (entry.attempts >= 4) pending.remove(normalized, entry);
-            else pending.replace(normalized, entry, new Entry(entry.hash, entry.expiresAt, entry.sentAt, entry.attempts + 1));
+            if (entry.attempts >= 4) pending.remove(pendingKey, entry);
+            else pending.replace(pendingKey, entry, new Entry(entry.hash, entry.expiresAt, entry.sentAt, entry.attempts + 1));
             return false;
         }
-        pending.remove(normalized, entry);
+        pending.remove(pendingKey, entry);
         return true;
+    }
+
+    private String key(String email, Purpose purpose) {
+        return purpose.name() + ":" + email;
     }
 
     private JavaMailSenderImpl createSender() {
@@ -141,4 +171,6 @@ public class EmailVerificationService {
 
     private record Entry(String hash, long expiresAt, long sentAt, int attempts) {}
     private record RateWindow(long startedAt, int count) {}
+
+    public enum Purpose { REGISTER, PASSWORD_RESET }
 }

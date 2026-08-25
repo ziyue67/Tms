@@ -297,8 +297,10 @@ export default function IndexPage() {
                 >
                   {loading ? (showCaptcha ? "验证中..." : "登录中...") : "登录"}
                 </Button>
-                <div className="text-center text-sm text-default-500">没有账号？<Link className="text-primary ml-1" to="/register">注册账号</Link></div>
-                <div className="text-center text-sm text-default-500">没有账号？<Link className="text-primary ml-1" to="/register">注册账号</Link></div>
+                <div className="flex items-center justify-between text-sm text-default-500">
+                  <span>没有账号？<Link className="text-primary ml-1" to="/register">注册账号</Link></span>
+                  <Link className="text-primary" to="/forgot-password">忘记密码？</Link>
+                </div>
               </div>
             </CardBody>
           </Card>

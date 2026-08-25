@@ -1,0 +1,43 @@
+services:
+  backend:
+    image: ghcr.io/ziyue67/springboot-backend:latest
+    container_name: springboot-backend
+    restart: unless-stopped
+    environment:
+      DB_DRIVER: com.mysql.cj.jdbc.Driver
+      DB_URL: ${DB_URL:?Set DB_URL to the external MySQL JDBC URL}
+      DB_USER: ${DB_USER:?Set DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      LOG_DIR: /app/logs
+      JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
+    ports:
+      - "${BACKEND_PORT:-6365}:6365"
+    volumes:
+      - backend_logs:/app/logs
+    networks: [tms-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:6365/flow/test || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  frontend:
+    image: ghcr.io/ziyue67/vite-frontend:latest
+    container_name: vite-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-6366}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [tms-network]
+
+volumes:
+  backend_logs:
+    name: tms_backend_logs
+
+networks:
+  tms-network:
+    name: tms-network
