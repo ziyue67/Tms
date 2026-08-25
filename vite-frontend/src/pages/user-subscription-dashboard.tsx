@@ -31,17 +31,14 @@ export default function UserSubscriptionDashboardPage() {
   })), [data]);
   const total = Number(data?.totalTrafficBytes || 0);
   const used = Number(data?.usedTrafficBytes || 0);
-  const remaining = total > 0 ? Math.max(0, total - used) : 0;
 
   return <div className="p-4 space-y-4 max-w-6xl">
     <div className="flex items-center justify-between"><div><h1 className="text-xl font-bold">仪表盘</h1><p className="text-sm text-default-500">账号级套餐额度与近 24 小时用量</p></div><Button size="sm" variant="flat" onPress={load} isLoading={loading}>刷新</Button></div>
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       <Card><CardBody><div className="text-xs text-default-500">套餐总流量</div><div className="text-lg font-semibold">{bytes(total)}</div></CardBody></Card>
       <Card><CardBody><div className="text-xs text-default-500">已使用</div><div className="text-lg font-semibold">{total ? bytes(used) : bytes(data?.accountUsedTrafficBytes)}</div></CardBody></Card>
-      <Card><CardBody><div className="text-xs text-default-500">剩余</div><div className="text-lg font-semibold">{total ? bytes(remaining) : "不限"}</div></CardBody></Card>
       <Card><CardBody><div className="text-xs text-default-500">到期时间</div><div className="text-sm font-semibold">{data?.expiresAt ? new Date(data.expiresAt).toLocaleString() : "未开通套餐"}</div></CardBody></Card>
     </div>
-    <Card><CardHeader className="flex justify-between"><div><div className="font-semibold">套餐状态</div><div className="text-xs text-default-500">流量将在设定的每月重置日清零</div></div></CardHeader><CardBody className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm"><div>下次重置：<b>{data?.nextResetAt ? new Date(data.nextResetAt).toLocaleDateString() : "-"}</b></div><div>转发数量：<b>{data?.forwardCount || 0} / {data?.forwardLimit || "不限"}</b></div><div>套餐 ID：<b>{data?.planId || "-"}</b></div><div>账户累计流量：<b>{bytes(data?.accountUsedTrafficBytes)}</b></div></CardBody></Card>
     <Card><CardHeader><div><div className="font-semibold">近 24 小时流量</div><div className="text-xs text-default-500">按统计任务生成的小时流量</div></div></CardHeader><CardBody><div className="h-64">{chart.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chart}><XAxis dataKey="time" minTickGap={24} /><YAxis tickFormatter={(value) => bytes(Number(value))} width={72} /><Tooltip formatter={(value) => bytes(Number(value))} /><Line type="monotone" dataKey="flow" stroke="#2563eb" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer> : <div className="h-full grid place-items-center text-sm text-default-400">暂无最近 24 小时流量记录</div>}</div></CardBody></Card>
   </div>;
 }
