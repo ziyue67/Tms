@@ -72,6 +72,10 @@ export default function AdminLayout({
 
   // 菜单项配置
   const menuItems: MenuItem[] = [
+    { path: '/dashboard', label: '仪表板', icon: <span className="text-lg">⌂</span>, userOnly: true },
+    { path: '/purchase', label: '购买套餐', icon: <span className="text-lg">￥</span>, userOnly: true },
+    { path: '/redeem', label: '兑换码', icon: <span className="text-lg">◇</span>, userOnly: true },
+    { path: '/admin/subscription', label: '套餐管理', icon: <span className="text-lg">￥</span>, adminOnly: true },
     {
       path: '/dashboard',
       label: '仪表板',
@@ -190,6 +194,9 @@ export default function AdminLayout({
   const MENU_ORDER = [
     '/dashboard',   // 0 仪表板
     '/my-sub',      // 车友专属,管理员看不到
+    '/purchase',
+    '/redeem',
+    '/admin/subscription',
     '/node',        // 1 转发机
     '/inbound',     // 2 协议管理
     '/relay',       // 3 中转

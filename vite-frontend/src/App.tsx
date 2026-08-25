@@ -15,6 +15,11 @@ import RelayPage from "@/pages/relay";
 import GuidePage from "@/pages/guide";
 import MySubPage from "@/pages/my-sub";
 import ConfigPage from "@/pages/config";
+import RegisterPage from "@/pages/register";
+import AdminSubscriptionPage from "@/pages/admin-subscription";
+import UserSubscriptionDashboardPage from "@/pages/user-subscription-dashboard";
+import PurchasePage from "@/pages/purchase";
+import RedeemPage from "@/pages/redeem";
 import { SettingsPage } from "@/pages/settings";
 
 import AdminLayout from "@/layouts/admin";
@@ -110,8 +115,7 @@ const LoginRoute = () => {
   useEffect(() => {
     if (authenticated) {
       // 使用 React Router 导航，避免无限跳转
-      // 管理员进仪表板;车友进「我的订阅」(他只关心自己的订阅链接)
-      navigate(isAdmin() ? '/dashboard' : '/my-sub', { replace: true });
+      navigate('/dashboard', { replace: true });
     }
   }, [authenticated, navigate]);
   
@@ -154,6 +158,12 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<LoginRoute />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/subscription" element={<ProtectedRoute><Navigate to="/purchase" replace /></ProtectedRoute>} />
+      <Route path="/purchase" element={<ProtectedRoute><PurchasePage /></ProtectedRoute>} />
+      <Route path="/redeem" element={<ProtectedRoute><RedeemPage /></ProtectedRoute>} />
+      <Route path="/admin/subscription" element={<ProtectedRoute useSimpleLayout><AdminSubscriptionPage /></ProtectedRoute>} />
+      <Route path="/register" element={<RegisterPage />} />
       <Route 
         path="/change-password" 
         element={
@@ -166,8 +176,7 @@ function App() {
         path="/dashboard"
         element={
           <ProtectedRoute>
-            {/* 仪表板是账号级口径,车友一切按线路算 → 直接送他去「我的订阅」 */}
-            {isAdmin() ? <DashboardPage /> : <Navigate to="/my-sub" replace />}
+            {isAdmin() ? <DashboardPage /> : <UserSubscriptionDashboardPage />}
           </ProtectedRoute>
         }
       />

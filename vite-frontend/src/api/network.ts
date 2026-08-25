@@ -167,7 +167,25 @@ const Network = {
            resolve({"code": -1, "msg": error.message || "网络请求失败", "data": null as T});
          });
     });
+  },
+
+  put: function<T = any>(path: string = '', data: any = {}): Promise<ApiResponse<T>> {
+    return request<T>('put', path, data);
+  },
+
+  delete: function<T = any>(path: string = ''): Promise<ApiResponse<T>> {
+    return request<T>('delete', path);
   }
 };
+
+function request<T>(method: 'put' | 'delete', path: string, data?: any): Promise<ApiResponse<T>> {
+  return axios({ method, url: path, data, timeout: timeoutFor(path), headers: { "Authorization": window.localStorage.getItem('token'), "Content-Type": "application/json" } })
+    .then((response: AxiosResponse<ApiResponse<T>>) => response.data)
+    .catch((error: any) => {
+      console.error(`${method.toUpperCase()}请求错误:`, error);
+      if (error.response && error.response.status === 401) handleTokenExpired();
+      return { code: -1, msg: error.message || '网络请求失败', data: null as T };
+    });
+}
 
 export default Network; 

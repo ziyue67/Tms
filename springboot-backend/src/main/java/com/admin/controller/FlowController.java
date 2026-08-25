@@ -72,6 +72,8 @@ public class FlowController extends BaseController {
     com.admin.mapper.InboundUserMapper inboundUserMapper;
     @Resource
     com.admin.mapper.InboundLineMapper inboundLineMapper;
+    @Resource
+    com.admin.service.SubscriptionService subscriptionService;
 
     /**
      * 加密消息包装器
@@ -238,6 +240,7 @@ public class FlowController extends BaseController {
         updateForwardFlow(forwardId, flowStats);
         updateUserFlow(userId, flowStats);
         updateUserTunnelFlow(userTunnelId, flowStats);
+        subscriptionService.recordTrafficUsage(Long.parseLong(userId), Math.max(0L, flowStats.getD()) + Math.max(0L, flowStats.getU()));
 
         // 7. 检查和服务暂停操作
         String name = buildServiceName(forwardId, userId, userTunnelId);
@@ -271,7 +274,9 @@ public class FlowController extends BaseController {
         }
         if (u.getStatus() != null && u.getStatus() != 1) {
             pauseAllUserServices(userId, name);
+            return;
         }
+        if (subscriptionService.quotaLimitError(Long.parseLong(userId)) != null) pauseAllUserServices(userId, name);
     }
 
     /**

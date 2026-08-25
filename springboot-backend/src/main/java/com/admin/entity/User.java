@@ -43,6 +43,9 @@ public class User extends BaseEntity {
 
     private String user;
 
+    /** 注册邮箱；旧数据库用户允许为空。 */
+    private String email;
+
     private String pwd;
 
     private Integer roleId;

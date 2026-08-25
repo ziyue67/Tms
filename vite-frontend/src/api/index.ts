@@ -15,6 +15,32 @@ export interface LoginResponse {
 }
 
 export const login = (data: LoginData) => Network.post<LoginResponse>("/user/login", data);
+export const sendRegisterCode = (email: string) => Network.post("/auth/send-register-code", { email });
+export const register = (data: { email: string; password: string; code: string; username?: string }) => Network.post<LoginResponse>("/auth/register", data);
+export const getSubscriptionPlans = () => Network.get("/subscription/plans");
+export const getCurrentSubscription = () => Network.get("/subscription/current");
+export const getSubscriptionDashboard = () => Network.get("/subscription/dashboard");
+export const redeemSubscriptionCode = (code: string) => Network.post("/subscription/redeem", { code });
+export const createPaymentOrder = (planId: number, provider: string) => Network.post("/payment/orders", { planId, provider });
+export const getPaymentProviders = () => Network.get("/payment/providers");
+export const getAdminPlans = () => Network.get("/admin/subscription/plans");
+export const createAdminPlan = (data: any) => Network.post("/admin/subscription/plans", data);
+export const updateAdminPlan = (id: number, data: any) => Network.put(`/admin/subscription/plans/${id}`, data);
+export const deleteAdminPlan = (id: number) => Network.delete(`/admin/subscription/plans/${id}`);
+export const generateRedeemCodes = (planId: number, count: number, batchId?: string) => Network.post("/admin/subscription/redeem-codes", { planId, count, batchId });
+export const getAdminRedeemCodes = () => Network.get("/admin/subscription/redeem-codes");
+export const revokeRedeemCode = (id: number) => Network.post(`/admin/subscription/redeem-codes/${id}/revoke`);
+export const getAdminSubscriptionUser = (userId: number) => Network.get(`/admin/subscription/users/${userId}`);
+export const adjustAdminSubscriptionUser = (userId: number, data: any) => Network.put(`/admin/subscription/users/${userId}`, data);
+export const resetAdminSubscriptionQuota = (userId: number) => Network.post(`/admin/subscription/users/${userId}/reset-quota`);
+export const getAdminPaymentOrders = () => Network.get("/admin/subscription/orders");
+export const getCustomNodes = () => Network.get("/custom-nodes");
+export const importCustomNode = (name: string, link: string) => Network.post("/custom-nodes", { name, link });
+export const assignCustomNode = (nodeId: number, userId: number) => Network.post(`/custom-nodes/${nodeId}/assign`, { userId });
+export const unassignCustomNode = (nodeId: number, userId: number) => Network.delete(`/custom-nodes/${nodeId}/assign/${userId}`);
+export const deleteCustomNode = (nodeId: number) => Network.delete(`/custom-nodes/${nodeId}`);
+export const getAuthConfig = () => Network.get("/auth/config");
+export const getPaymentOrder = (orderNo: string) => Network.get(`/payment/orders/${orderNo}`);
 
 // 用户CRUD操作 - 全部使用POST请求
 export const createUser = (data: any) => Network.post("/user/create", data);
@@ -112,6 +138,7 @@ export const resetUserFlow = (data: { id: number; type: number }) => Network.pos
 
 // 网站配置相关接口
 export const getConfigs = () => Network.post("/config/list");
+export const getAdminConfigs = () => Network.post("/config/private-list");
 export const getConfigByName = (name: string) => Network.post("/config/get", { name });
 export const updateConfigs = (configMap: Record<string, string>) => Network.post("/config/update", configMap);
 export const updateConfig = (name: string, value: string) => Network.post("/config/update-single", { name, value });

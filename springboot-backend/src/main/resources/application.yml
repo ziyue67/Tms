@@ -41,6 +41,20 @@ mybatis-plus:
 jwt-secret: ${JWT_SECRET}
 log-dir: ${LOG_DIR}
 
+mail:
+  host: ${SMTP_HOST:}
+  port: ${SMTP_PORT:587}
+  username: ${SMTP_USERNAME:}
+  password: ${SMTP_PASSWORD:}
+  properties:
+    mail.smtp.auth: ${SMTP_AUTH:true}
+    mail.smtp.starttls.enable: ${SMTP_STARTTLS:true}
+
+tms:
+  auth:
+    verification-expire-seconds: ${VERIFY_CODE_EXPIRE_SECONDS:600}
+    verification-cooldown-seconds: ${VERIFY_CODE_COOLDOWN_SECONDS:60}
+
 
 captcha:
   init-default-resource: true

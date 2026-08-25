@@ -15,6 +15,8 @@ public class UserUpdateDto {
     @NotBlank(message = "用户名不能为空")
     private String user;
 
+    private String email;
+
     private String pwd; // 更新时密码可选
 
     @NotNull(message = "流量不能为空")

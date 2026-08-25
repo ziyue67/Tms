@@ -16,5 +16,7 @@ public class LoginDto {
 
     private String captchaId;
 
+    private String emailCode;
+
 
 }

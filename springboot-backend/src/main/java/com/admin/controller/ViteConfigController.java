@@ -6,7 +6,10 @@ import com.admin.common.aop.LogAnnotation;
 import com.admin.common.lang.R;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * <p>
@@ -20,6 +23,10 @@ import java.util.Map;
 @CrossOrigin
 @RequestMapping("/api/v1/config")
 public class ViteConfigController extends BaseController {
+
+    private static final Set<String> PUBLIC_CONFIGS = new HashSet<>(Arrays.asList(
+            "app_name", "captcha_enabled", "captcha_type"
+    ));
 
     /**
      * 获取所有网站配置
@@ -38,8 +45,23 @@ public class ViteConfigController extends BaseController {
     @LogAnnotation
     @PostMapping("/get")
     public R getConfigByName(@RequestBody Map<String, Object> params) {
-        String name = params.get("name").toString();
+        Object requestedName = params.get("name");
+        if (requestedName == null || !PUBLIC_CONFIGS.contains(requestedName.toString())) {
+            return R.err("该配置不允许公开读取");
+        }
+        String name = requestedName.toString();
         return viteConfigService.getConfigByName(name);
+    }
+
+    /**
+     * Includes SMTP and payment credentials. It is intentionally separate from
+     * the public site-config endpoint so those values never reach normal users.
+     */
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/private-list")
+    public R getPrivateConfigs() {
+        return viteConfigService.getConfigs();
     }
 
     /**

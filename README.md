@@ -1,5 +1,15 @@
 # TMS 面板
 
+## License notice
+
+This fork contains upstream TMS code under Apache-2.0. New account, subscription,
+redemption and commerce additions are offered under the MIT terms in `LICENSE-MIT`.
+The upstream `LICENSE` and copyright notices remain applicable to the original code.
+
+### Account and commerce migration
+
+After importing `gost.sql`, apply `springboot-backend/src/main/resources/db/tms-account-commerce.sql` once. Configure SMTP and payment callback secrets in the administrator's website configuration before enabling registration or payment callbacks.
+
 > 一个面板同时搞定**翻墙协议**、**转发中转**、以及**每用户限速 / 流量 / 到期**。
 
 <p>
@@ -42,7 +52,7 @@
 找一台机器执行:
 
 ```bash
-curl -L https://raw.githubusercontent.com/Teminuosi/Tms/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+curl -L https://raw.githubusercontent.com/ziyue67/Tms/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 ```
 
 装完会打印访问地址。默认账号 **admin_user** / **admin_user**。
@@ -76,7 +86,7 @@ curl -L https://raw.githubusercontent.com/Teminuosi/Tms/main/panel_install.sh -o
 > 「sing-box 未运行」。用镜像加速,并加 `-c` 强制内部下载也走国内镜像:
 >
 > ```bash
-> curl -L https://ghfast.top/https://raw.githubusercontent.com/Teminuosi/Tms/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh -c -a 面板地址:端口 -s 你的密钥
+> curl -L https://ghfast.top/https://raw.githubusercontent.com/ziyue67/Tms/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh -c -a 面板地址:端口 -s 你的密钥
 > ```
 >
 > `面板地址` 和 `密钥` 就从上面「点安装」弹出的那条命令里抄。
@@ -94,7 +104,7 @@ curl -L https://raw.githubusercontent.com/Teminuosi/Tms/main/panel_install.sh -o
 (密钥同样得先在面板「转发机监控」新增该转发机才有):
 
 ```bash
-curl -L https://raw.githubusercontent.com/Teminuosi/Tms/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+curl -L https://raw.githubusercontent.com/ziyue67/Tms/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 ```
 
 </details>
@@ -195,7 +205,7 @@ tms purge
 如果 `tms` 命令不在了(比如当初就没装成功),用一次性脚本:
 
 ```bash
-curl -L https://raw.githubusercontent.com/Teminuosi/Tms/main/panel_install.sh -o /tmp/tms.sh && bash /tmp/tms.sh purge
+curl -L https://raw.githubusercontent.com/ziyue67/Tms/main/panel_install.sh -o /tmp/tms.sh && bash /tmp/tms.sh purge
 ```
 
 > 💡 最好 **cd 到当初安装面板的目录**再执行。不在那个目录时,脚本会从 `/usr/local/bin/tms` 里读回安装目录并自动切过去;
@@ -242,7 +252,7 @@ echo "✅ 节点已卸载(gost + sing-box + 配置 + 证书)"
 也可以重新下节点脚本走菜单(选 `3` 卸载):
 
 ```bash
-curl -L https://raw.githubusercontent.com/Teminuosi/Tms/main/install.sh -o /tmp/n.sh && chmod +x /tmp/n.sh && /tmp/n.sh
+curl -L https://raw.githubusercontent.com/ziyue67/Tms/main/install.sh -o /tmp/n.sh && chmod +x /tmp/n.sh && /tmp/n.sh
 ```
 
 > 💡 **国内机器**(阿里云等)大概率下不动 GitHub,直接用上面那段命令。
@@ -301,5 +311,5 @@ ufw delete <编号>        # 逐条删
 
 ---
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Teminuosi/Tms&type=Date)](https://www.star-history.com/#Teminuosi/Tms&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=ziyue67/Tms&type=Date)](https://www.star-history.com/#ziyue67/Tms&Date)
 

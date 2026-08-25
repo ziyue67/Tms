@@ -70,11 +70,19 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     @Resource
     private InboundMapper inboundMapper;
 
+    @Resource
+    private SubscriptionService subscriptionService;
+
 
     @Override
     public R createForward(ForwardDto forwardDto) {
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
+
+        if (currentUser.getRoleId() != null && currentUser.getRoleId() != 0) {
+            String quotaError = subscriptionService.forwardLimitError(currentUser.getUserId().longValue());
+            if (quotaError != null) return R.err(quotaError);
+        }
 
         // 2. 检查隧道是否存在和可用
         Tunnel tunnel = validateTunnel(forwardDto.getTunnelId());
@@ -146,6 +154,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Override
     public R createForwardForUser(ForwardDto forwardDto, Integer userId, String userName) {
+        String quotaError = subscriptionService.forwardLimitError(userId.longValue());
+        if (quotaError != null) return R.err(quotaError);
         // 1. 校验隧道(该端口转发隧道由 InboundService 保证入口机=入站节点)
         Tunnel tunnel = validateTunnel(forwardDto.getTunnelId());
         if (tunnel == null) {

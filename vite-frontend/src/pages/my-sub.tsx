@@ -9,14 +9,15 @@ import { copyTextToClipboard } from "@/utils/clipboard";
 import { SubQrToggle } from "@/components/sub-qr";
 
 /**
- * 我的订阅(车友视角)· 一条订阅 = 一个套餐。
- * 每条线路各自带流量配额、到期、状态——不存在"账号总流量"这种混淆概念。
+ * 我的订阅(车友视角)。账号套餐的流量和转发额度在全部线路间共享；
+ * 线路卡仅用于选择需要导入的单条订阅。
  * 车友只管复制链接导客户端,内部的机器/端口/转发对他隐藏。
  */
 export default function MySubPage() {
   const [lines, setLines] = useState<any[]>([]);
   // 「全部线路」聚合订阅:一条链接包含他所有线路,以后新开线路也不用重发
   const [allSubToken, setAllSubToken] = useState<string>("");
+  const [customNodeCount, setCustomNodeCount] = useState(0);
   const [account, setAccount] = useState<any>(null); // 只用来判断账号是否被停用/到期
   const [loading, setLoading] = useState(true);
 
@@ -33,7 +34,10 @@ export default function MySubPage() {
         // 万一前后端镜像版本不同步也不会白屏
         const d: any = ln.data;
         setLines(Array.isArray(d) ? d : (d?.lines || []));
-        if (!Array.isArray(d) && d?.allSubToken) setAllSubToken(d.allSubToken);
+        if (!Array.isArray(d)) {
+          if (d?.allSubToken) setAllSubToken(d.allSubToken);
+          setCustomNodeCount(Number(d?.customNodeCount || 0));
+        }
       }
       if (pkg.code === 0) setAccount(pkg.data?.userInfo || null);
     } catch (e) {
@@ -60,7 +64,7 @@ export default function MySubPage() {
     <div className="p-4 space-y-4 max-w-4xl">
       <div className="flex items-baseline gap-3">
         <h1 className="text-xl font-bold">我的订阅</h1>
-        <span className="text-sm text-default-500">共 {lines.length} 条线路,每条各自独立</span>
+        <span className="text-sm text-default-500">共 {lines.length} 条线路，可单独或聚合导入</span>
       </div>
 
       {(accountDisabled || accountExpired) && (
@@ -71,7 +75,7 @@ export default function MySubPage() {
         </Card>
       )}
 
-      {!loading && allSubToken && lines.length > 1 && (
+      {!loading && allSubToken && (lines.length > 1 || customNodeCount > 0) && (
         <Card className="border border-primary/40 bg-primary/5">
           <CardBody className="space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
@@ -82,6 +86,7 @@ export default function MySubPage() {
               </Chip>
             </div>
             <Input
+              label="v2rayN / Base64 订阅"
               readOnly
               size="sm"
               value={subUrl(allSubToken)}
@@ -97,9 +102,18 @@ export default function MySubPage() {
                     : toast.error("复制失败,点框内已全选,按 Ctrl+C");
                 }}
               >
-                复制订阅链接
+                复制 v2rayN 链接
               </Button>
               <SubQrToggle url={subUrl(allSubToken)} />
+            </div>
+            <Input
+              label="Clash / Mihomo YAML 订阅"
+              readOnly
+              size="sm"
+              value={clashUrl(allSubToken)}
+              onClick={(e: any) => { if (e.target?.select) e.target.select(); }}
+            />
+            <div className="flex gap-2 items-start">
               <Button
                 size="sm"
                 variant="flat"
@@ -109,8 +123,9 @@ export default function MySubPage() {
                     : toast.error("复制失败,请手动选中");
                 }}
               >
-                Clash / Mihomo 版
+                复制 Clash 链接
               </Button>
+              <SubQrToggle url={clashUrl(allSubToken)} />
             </div>
             <div className="text-xs text-default-400">
               节点名前面带线路标识(如「香港机器 VLESS」),方便区分从哪出口。
@@ -156,7 +171,7 @@ export default function MySubPage() {
                     <Chip size="sm" variant="flat" className="ml-auto">{ln.protocolCount} 协议</Chip>
                   </div>
 
-                  {/* 这条订阅自己的套餐:流量 + 到期 */}
+                  {/* 线路使用信息；账号套餐配额显示在仪表盘。 */}
                   <div className="flex items-center gap-6 text-sm">
                     <div>
                       <span className="text-default-500 text-xs">流量 </span>
@@ -183,6 +198,7 @@ export default function MySubPage() {
 
                   {/* 订阅链接 */}
                   <Input
+                    label="v2rayN / Base64 订阅"
                     readOnly
                     size="sm"
                     value={url}
@@ -198,9 +214,27 @@ export default function MySubPage() {
                           : toast.error("复制失败,点框内已全选,按 Ctrl+C");
                       }}
                     >
-                      复制订阅链接
-                    </Button>
+                        复制 v2rayN 链接
+                      </Button>
                     <SubQrToggle url={url} />
+                  </div>
+                  <Input
+                    label="Clash / Mihomo YAML 订阅"
+                    readOnly
+                    size="sm"
+                    value={clashUrl(ln.subToken)}
+                    onClick={(e: any) => { if (e.target?.select) e.target.select(); }}
+                  />
+                  <div className="flex gap-2 items-start">
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      onPress={async () => {
+                        const clash = clashUrl(ln.subToken);
+                        (await copyTextToClipboard(clash)) ? toast.success("已复制 Clash / Mihomo 订阅") : toast.error("复制失败,请手动选中");
+                      }}
+                    >复制 Clash 链接</Button>
+                    <SubQrToggle url={clashUrl(ln.subToken)} />
                   </div>
                 </CardBody>
               </Card>
@@ -218,9 +252,10 @@ export default function MySubPage() {
             <li><b>v2rayN(Windows)</b>:订阅 → 订阅分组设置 → 添加 → 粘贴地址 → 确定 → 更新订阅</li>
             <li><b>小火箭 / Shadowrocket(iOS)</b>:右上角 + → 类型选「Subscribe」→ 粘贴地址</li>
             <li><b>v2rayNG(安卓)</b>:左侧菜单 → 订阅分组设置 → + → 粘贴地址 → 更新订阅</li>
+            <li><b>Clash Verge / ClashMeta / Mihomo</b>:使用上方标注为 Clash / Mihomo YAML 的链接或二维码导入配置</li>
           </ul>
           <div className="text-xs text-default-400">
-            每条线路是独立的套餐:流量、到期各算各的,一条用完不影响另一条。管理员在某条线路上加了新协议,你更新订阅就自动出现。
+            套餐流量、到期和转发额度按账号共享；管理员给账号新增线路或自定义节点后，更新“全部线路”订阅即可出现。
           </div>
         </CardBody>
       </Card>

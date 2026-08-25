@@ -10,8 +10,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.HashMap;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * <p>
@@ -23,6 +26,10 @@ import java.util.Map;
  */
 @Service
 public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteConfig> implements ViteConfigService {
+
+    private static final Set<String> PUBLIC_CONFIG_NAMES = new HashSet<>(Arrays.asList(
+            "app_name", "captcha_enabled", "captcha_type"
+    ));
 
     // ========== 常量定义 ==========
     
@@ -48,7 +55,9 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
         Map<String, String> configMap = new HashMap<>();
         
         for (ViteConfig config : configList) {
-            configMap.put(config.getName(), config.getValue());
+            if (PUBLIC_CONFIG_NAMES.contains(config.getName())) {
+                configMap.put(config.getName(), config.getValue());
+            }
         }
         
         return R.ok(configMap);

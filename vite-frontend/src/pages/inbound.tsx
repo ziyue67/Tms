@@ -19,6 +19,11 @@ import {
   getNodeList,
   getAllUsers,
   getSpeedLimitList,
+  getCustomNodes,
+  importCustomNode,
+  assignCustomNode,
+  unassignCustomNode,
+  deleteCustomNode,
 } from "@/api";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { SNI_PRESETS, DEFAULT_SNI, cleanSni } from "@/config/sni";
@@ -35,6 +40,10 @@ export default function InboundPage() {
   const [nodes, setNodes] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [speedRules, setSpeedRules] = useState<any[]>([]);
+  const [customNodes, setCustomNodes] = useState<any[]>([]);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customForm, setCustomForm] = useState({ name: "", link: "", userId: "" });
+  const [customLoading, setCustomLoading] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<any>({ nodeId: null, protocol: "vless", sni: DEFAULT_SNI, dest: "", remark: "" });
@@ -78,11 +87,12 @@ export default function InboundPage() {
 
   const loadAll = async () => {
     try {
-      const [ib, nd, us, sp] = await Promise.all([
+      const [ib, nd, us, sp, cn] = await Promise.all([
         getInboundList(),
         getNodeList(),
         getAllUsers(),
         getSpeedLimitList(),
+        getCustomNodes(),
       ]);
       if (ib.code === 0) setInbounds(ib.data || []);
       if (nd.code === 0) setNodes(nd.data || []);
@@ -91,6 +101,7 @@ export default function InboundPage() {
         setUsers(Array.isArray(d) ? d : (d && d.records ? d.records : []));
       }
       if (sp.code === 0) setSpeedRules(sp.data || []);
+      if (cn.code === 0) setCustomNodes(cn.data || []);
     } catch (e) {
       toast.error("加载失败");
     }
@@ -198,6 +209,33 @@ export default function InboundPage() {
     }
   };
 
+  const handleImportCustomNode = async () => {
+    if (!customForm.link.trim()) return toast.error("请输入 VLESS 分享链接");
+    setCustomLoading(true);
+    try {
+      const imported = await importCustomNode(customForm.name, customForm.link);
+      if (imported.code !== 0) return toast.error(imported.msg || "导入失败");
+      if (customForm.userId) {
+        const assigned = await assignCustomNode(imported.data.id, Number(customForm.userId));
+        if (assigned.code !== 0) return toast.error(assigned.msg || "节点已导入，但分配失败");
+      }
+      toast.success("自定义节点已导入");
+      setCustomOpen(false); setCustomForm({ name: "", link: "", userId: "" }); loadAll();
+    } catch (e) { toast.error("导入失败"); }
+    finally { setCustomLoading(false); }
+  };
+
+  const handleCustomAssignment = async (node: any, userId: string) => {
+    if (!userId) return;
+    const res = await assignCustomNode(node.id, Number(userId));
+    if (res.code === 0) { toast.success("已分配给用户"); loadAll(); } else toast.error(res.msg || "分配失败");
+  };
+
+  const handleUnassignCustomNode = async (nodeId: number, userId: number) => {
+    const res = await unassignCustomNode(nodeId, userId);
+    if (res.code === 0) { toast.success("已取消分配"); loadAll(); } else toast.error(res.msg || "操作失败");
+  };
+
   // 协议管理只管【直连】协议(landingId 为空);中转的协议在「中转」页管
   const machineNodes = nodes.filter((n) => inbounds.some((ib) => ib.nodeId === n.id && !ib.landingId));
 
@@ -225,6 +263,7 @@ export default function InboundPage() {
           >
             单独加一个协议
           </Button>
+          <Button variant="bordered" onPress={() => setCustomOpen(true)}>导入自定义协议</Button>
         </div>
       </div>
 
@@ -322,6 +361,25 @@ export default function InboundPage() {
         <div className="text-center text-default-400 py-8">还没有协议,点右上角「⚡ 一键搭建整机协议」在某台机器上把全套协议建出来</div>
       )}
 
+      {customNodes.length > 0 && <Card>
+        <CardBody className="space-y-3">
+          <div className="font-semibold">自定义订阅节点</div>
+          <div className="text-xs text-default-500">导入的节点会进入已分配用户的聚合订阅，不会创建本机入站或转发服务。</div>
+          {customNodes.map((node) => <div key={node.id} className="flex flex-wrap items-center gap-2 border-t border-divider pt-3">
+            <Chip size="sm" color={node.status === 1 ? "success" : "default"}>{node.protocol?.toUpperCase()}</Chip>
+            <span className="font-medium">{node.name}</span>
+            {(node.userIds || []).map((id: number) => {
+              const user = users.find((u) => Number(u.id) === Number(id));
+              return <Chip key={id} size="sm" onClose={() => handleUnassignCustomNode(node.id, id)}>{user?.user || `用户 #${id}`}</Chip>;
+            })}
+            {node.status === 1 && <Select size="sm" className="w-44 ml-auto" placeholder="分配用户" onSelectionChange={(keys) => handleCustomAssignment(node, String(Array.from(keys)[0] || ""))}>
+              {users.filter((u) => !(node.userIds || []).includes(u.id)).map((u) => <SelectItem key={u.id}>{u.user}</SelectItem>)}
+            </Select>}
+            <Button size="sm" color="danger" variant="flat" onPress={async () => { if (window.confirm(`停用「${node.name}」？`)) { const r = await deleteCustomNode(node.id); if (r.code === 0) { toast.success("已停用"); loadAll(); } else toast.error(r.msg || "停用失败"); } }}>停用</Button>
+          </div>)}
+        </CardBody>
+      </Card>}
+
       {/* 「我自己用」结果:直接把订阅链接给出来,不用再去用户管理找 */}
       <Modal isOpen={selfOpen} onClose={() => setSelfOpen(false)} size="2xl">
         <ModalContent>
@@ -361,6 +419,21 @@ export default function InboundPage() {
               复制订阅链接
             </Button>
           </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={customOpen} onClose={() => setCustomOpen(false)} size="2xl">
+        <ModalContent>
+          <ModalHeader>导入自定义协议节点</ModalHeader>
+          <ModalBody className="space-y-3">
+            <Input label="VLESS 分享链接" value={customForm.link} onChange={(e) => setCustomForm({ ...customForm, link: e.target.value })} placeholder="vless://uuid@host:port?...#节点名称" />
+            <Input label="显示名称（可空）" value={customForm.name} onChange={(e) => setCustomForm({ ...customForm, name: e.target.value })} />
+            <Select label="立即分配给用户（可空）" selectedKeys={customForm.userId ? [customForm.userId] : []} onSelectionChange={(keys) => setCustomForm({ ...customForm, userId: String(Array.from(keys)[0] || "") })}>
+              {users.map((u) => <SelectItem key={u.id}>{u.user}</SelectItem>)}
+            </Select>
+            <p className="text-xs text-default-500">当前支持 VLESS 链接。导入后会同时出现在该用户的 V2RayN 和 Clash/Mihomo 聚合订阅中。</p>
+          </ModalBody>
+          <ModalFooter><Button variant="light" onPress={() => setCustomOpen(false)}>取消</Button><Button color="primary" isLoading={customLoading} onPress={handleImportCustomNode}>导入</Button></ModalFooter>
         </ModalContent>
       </Modal>
 

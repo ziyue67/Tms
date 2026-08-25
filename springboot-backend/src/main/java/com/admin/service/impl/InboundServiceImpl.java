@@ -15,6 +15,7 @@ import com.admin.entity.InboundUser;
 import com.admin.entity.Node;
 import com.admin.entity.Tunnel;
 import com.admin.entity.User;
+import com.admin.entity.CustomNode;
 import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.InboundMapper;
 import com.admin.mapper.InboundUserMapper;
@@ -74,6 +75,8 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
     private com.admin.mapper.InboundLineMapper inboundLineMapper;
     @Autowired
     private com.admin.service.LandingService landingService;
+    @Autowired
+    private com.admin.service.CustomNodeService customNodeService;
 
     @Override
     public R createInbound(InboundDto dto) {
@@ -673,6 +676,13 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
                 links.add(link);
             }
         }
+        // Imported nodes are client-side links. They are deliberately added only to
+        // the aggregate subscription: they have no local machine/line identity.
+        for (CustomNode custom : customNodeService.activeForUser(u.getId())) {
+            if (custom.getRawLink() != null && !custom.getRawLink().isEmpty()) {
+                links.add(custom.getRawLink());
+            }
+        }
         String joined = String.join("\n", links);
         return java.util.Base64.getEncoder()
                 .encodeToString(joined.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -773,6 +783,13 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
                     in.getPublicKey(), in.getShortId(), ssMethod);
             if (proxy != null) {
                 proxies.add(proxy);
+            }
+        }
+        Long customOwnerId = aggUser != null ? aggUser.getId() : (ius.isEmpty() ? null : ius.get(0).getUserId());
+        if (customOwnerId != null) {
+            for (CustomNode custom : customNodeService.activeForUser(customOwnerId)) {
+                java.util.Map<String, Object> proxy = customNodeService.clashProxy(custom, usedNames);
+                if (proxy != null) proxies.add(proxy);
             }
         }
         if (proxies.isEmpty()) {
@@ -1001,7 +1018,9 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         // 前端做了两种格式的兼容,老前端配新后端也不会白屏。
         JSONObject result = new JSONObject();
         result.put("lines", lines);
-        if (!lines.isEmpty()) {
+        int customNodeCount = customNodeService.activeCount(userId);
+        result.put("customNodeCount", customNodeCount);
+        if (!lines.isEmpty() || customNodeCount > 0) {
             User u = userMapper.selectById(userId);
             if (u != null) {
                 result.put("allSubToken", ensureAllSubToken(u));

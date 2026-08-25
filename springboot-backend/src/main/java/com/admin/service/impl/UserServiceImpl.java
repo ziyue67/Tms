@@ -22,6 +22,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
@@ -41,6 +42,7 @@ import java.util.Objects;
 @Slf4j
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     // ========== 常量定义 ==========
     
@@ -322,8 +324,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
             // 3. 验证当前密码是否正确
             User user = currentUser.getUser();
-            String currentPasswordMd5 = Md5Util.md5(changePasswordDto.getCurrentPassword());
-            if (!user.getPwd().equals(currentPasswordMd5)) {
+            boolean currentPasswordOk = user.getPwd() != null && user.getPwd().startsWith("$2")
+                    ? passwordEncoder.matches(changePasswordDto.getCurrentPassword(), user.getPwd())
+                    : user.getPwd().equals(Md5Util.md5(changePasswordDto.getCurrentPassword()));
+            if (!currentPasswordOk) {
                 return R.err(ERROR_CURRENT_PASSWORD_WRONG);
             }
 
@@ -339,7 +343,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             User updateUser = new User();
             updateUser.setId(user.getId());
             updateUser.setUser(changePasswordDto.getNewUsername());
-            updateUser.setPwd(Md5Util.md5(changePasswordDto.getNewPassword()));
+            updateUser.setPwd(passwordEncoder.encode(changePasswordDto.getNewPassword()));
             updateUser.setUpdatedTime(System.currentTimeMillis());
             
             boolean result = this.updateById(updateUser);
@@ -379,13 +383,24 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * @return 登录验证结果
      */
     private LoginValidationResult validateUserCredentials(LoginDto loginDto) {
-        User user = this.getOne(new QueryWrapper<User>().eq("user", loginDto.getUsername()));
+        QueryWrapper<User> query = new QueryWrapper<User>().eq("user", loginDto.getUsername());
+        if (loginDto.getUsername() != null && loginDto.getUsername().contains("@")) {
+            query = new QueryWrapper<User>().and(w -> w.eq("user", loginDto.getUsername()).or().eq("email", loginDto.getUsername().toLowerCase()));
+        }
+        User user = this.getOne(query);
         if (user == null) {
             return LoginValidationResult.error(ERROR_LOGIN_CREDENTIALS);
         }
         
-        if (!user.getPwd().equals(Md5Util.md5(loginDto.getPassword()))) {
+        boolean bcrypt = user.getPwd() != null && user.getPwd().startsWith("$2");
+        boolean passwordOk = bcrypt ? passwordEncoder.matches(loginDto.getPassword(), user.getPwd()) : user.getPwd().equals(Md5Util.md5(loginDto.getPassword()));
+        if (!passwordOk) {
             return LoginValidationResult.error(ERROR_LOGIN_CREDENTIALS);
+        }
+        if (!bcrypt) {
+            user.setPwd(passwordEncoder.encode(loginDto.getPassword()));
+            user.setUpdatedTime(System.currentTimeMillis());
+            this.updateById(user);
         }
         
         if (user.getStatus() == USER_STATUS_DISABLED) {
@@ -439,7 +454,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         BeanUtils.copyProperties(userDto, user);
         
         // 设置加密密码
-        user.setPwd(Md5Util.md5(userDto.getPwd()));
+        user.setPwd(passwordEncoder.encode(userDto.getPwd()));
         
         // 设置默认属性
         user.setStatus(userDto.getStatus() != null ? userDto.getStatus() : USER_STATUS_ACTIVE);
@@ -477,7 +492,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         
         // 处理密码更新
         if (StrUtil.isNotBlank(userUpdateDto.getPwd())) {
-            user.setPwd(Md5Util.md5(userUpdateDto.getPwd()));
+            user.setPwd(passwordEncoder.encode(userUpdateDto.getPwd()));
         } else {
             user.setPwd(null); // 不更新密码字段
         }

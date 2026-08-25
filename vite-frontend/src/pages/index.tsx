@@ -2,7 +2,7 @@ import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
 import axios from 'axios';
 import { isWebViewFunc } from '@/utils/panel';
@@ -297,6 +297,8 @@ export default function IndexPage() {
                 >
                   {loading ? (showCaptcha ? "验证中..." : "登录中...") : "登录"}
                 </Button>
+                <div className="text-center text-sm text-default-500">没有账号？<Link className="text-primary ml-1" to="/register">注册账号</Link></div>
+                <div className="text-center text-sm text-default-500">没有账号？<Link className="text-primary ml-1" to="/register">注册账号</Link></div>
               </div>
             </CardBody>
           </Card>

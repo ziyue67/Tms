@@ -8,11 +8,11 @@ import { Divider } from "@heroui/divider";
 import { Switch } from "@heroui/switch";
 import { Select, SelectItem } from "@heroui/select";
 import toast from 'react-hot-toast';
-import { updateConfigs } from '@/api';
+import { getAdminConfigs, updateConfigs } from '@/api';
 import { SettingsIcon } from '@/components/icons';
 
 import { isAdmin } from '@/utils/auth';
-import { getCachedConfigs, clearConfigCache, updateSiteConfig } from '@/config/site';
+import { clearConfigCache, updateSiteConfig } from '@/config/site';
 
 // 简单的保存图标组件
 const SaveIcon = ({ className }: { className?: string }) => (
@@ -37,6 +37,7 @@ interface ConfigItem {
   placeholder?: string;
   description?: string;
   type: 'input' | 'switch' | 'select';
+  inputType?: 'text' | 'password';
   options?: { label: string; value: string; description?: string }[];
   dependsOn?: string; // 依赖的配置项key
   dependsValue?: string; // 依赖的配置项值
@@ -98,14 +99,33 @@ const CONFIG_ITEMS: ConfigItem[] = [
         description: '拖动滑块完成图片拼接' 
       }
     ]
-  }
+  },
+  { key: 'smtp_host', label: 'SMTP 服务器', placeholder: 'smtp.example.com', description: '用于发送注册验证码；留空时不能发送邮箱验证码。', type: 'input' },
+  { key: 'smtp_port', label: 'SMTP 端口', placeholder: '587', type: 'input' },
+  { key: 'smtp_username', label: 'SMTP 用户名', placeholder: '发件邮箱账号', type: 'input' },
+  { key: 'smtp_password', label: 'SMTP 密码', placeholder: 'SMTP 密码或授权码', type: 'input', inputType: 'password' },
+  { key: 'smtp_from', label: '发件人地址', placeholder: 'no-reply@example.com', type: 'input' },
+  { key: 'smtp_from_name', label: '发件人名称', placeholder: 'TMS', type: 'input' },
+  { key: 'smtp_starttls', label: '启用 STARTTLS', description: '常见 587 端口开启；465 端口通常使用 SSL。', type: 'switch' },
+  { key: 'smtp_ssl', label: '启用 SMTP SSL', description: '通常用于 465 端口；不要与 STARTTLS 同时启用。', type: 'switch' },
+  { key: 'email_code_expire_seconds', label: '邮箱验证码有效期（秒）', placeholder: '600', type: 'input' },
+  { key: 'email_code_cooldown_seconds', label: '邮箱验证码发送间隔（秒）', placeholder: '60', type: 'input' },
+  { key: 'payment_test_mode', label: '支付测试模式', description: '仅测试环境启用，管理员可手动完成待支付订单。', type: 'switch' },
+  { key: 'payment_alipay_enabled', label: '启用支付宝', type: 'switch' },
+  { key: 'payment_wechat_enabled', label: '启用微信支付', type: 'switch' },
+  { key: 'payment_easypay_enabled', label: '启用易支付', type: 'switch' },
+  { key: 'payment_stripe_enabled', label: '启用 Stripe', type: 'switch' },
+  { key: 'payment_alipay_secret', label: '支付宝回调密钥', placeholder: '仅保存于服务端', type: 'input', inputType: 'password' },
+  { key: 'payment_wechat_secret', label: '微信支付回调密钥', placeholder: '仅保存于服务端', type: 'input', inputType: 'password' },
+  { key: 'payment_easypay_secret', label: '易支付回调密钥', placeholder: '仅保存于服务端', type: 'input', inputType: 'password' },
+  { key: 'payment_stripe_secret', label: 'Stripe 回调密钥', placeholder: '仅保存于服务端', type: 'input', inputType: 'password' }
 ];
 
 // 初始化时从缓存读取配置，避免闪烁
 const getInitialConfigs = (): Record<string, string> => {
   if (typeof window === 'undefined') return {};
   
-  const configKeys = ['app_name', 'captcha_enabled', 'captcha_type', 'ip'];
+  const configKeys = ['app_name', 'captcha_enabled', 'captcha_type'];
   const initialConfigs: Record<string, string> = {};
   
   try {
@@ -150,7 +170,11 @@ export default function ConfigPage() {
     }
     
     try {
-      const configData = await getCachedConfigs();
+      const response = await getAdminConfigs();
+      if (response.code !== 0) {
+        throw new Error(response.msg || '加载配置失败');
+      }
+      const configData = response.data || {};
       
       // 只有在数据有变化时才更新
       const hasDataChanged = JSON.stringify(configData) !== JSON.stringify(configsToCompare);
@@ -257,6 +281,7 @@ export default function ConfigPage() {
       case 'input':
         return (
           <Input
+            type={item.inputType || 'text'}
             value={configs[item.key] || ''}
             onChange={(e) => handleConfigChange(item.key, e.target.value)}
             placeholder={item.placeholder}
@@ -346,6 +371,15 @@ export default function ConfigPage() {
             </p>
           </div>
         </div>
+
+        <Card className="mb-4 shadow-md">
+          <CardHeader><div><h2 className="text-lg font-semibold">订阅格式</h2><p className="text-sm text-gray-600 dark:text-gray-400">同一 API token 同时提供两种客户端格式。</p></div></CardHeader>
+          <CardBody className="text-sm space-y-1 text-gray-600 dark:text-gray-300">
+            <div><b>v2rayN / Base64：</b><code>/api/v1/open_api/sub?token=...</code></div>
+            <div><b>Clash Verge / ClashMeta / Mihomo：</b><code>/api/v1/open_api/clash?token=...</code></div>
+            <div className="text-xs text-gray-500">两种链接使用同一个 token，格式不同，不能互相替代。</div>
+          </CardBody>
+        </Card>
 
         <Card className="shadow-md">
           <CardHeader className="pb-4">
