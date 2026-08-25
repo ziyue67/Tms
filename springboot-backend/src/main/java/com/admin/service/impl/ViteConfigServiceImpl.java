@@ -63,6 +63,16 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
         return R.ok(configMap);
     }
 
+    @Override
+    public R getPrivateConfigs() {
+        List<ViteConfig> configList = this.list();
+        Map<String, String> configMap = new HashMap<>();
+        for (ViteConfig config : configList) {
+            configMap.put(config.getName(), config.getValue());
+        }
+        return R.ok(configMap);
+    }
+
     /**
      * 根据配置名称获取配置值
      * 

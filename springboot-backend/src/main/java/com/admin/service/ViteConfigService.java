@@ -22,6 +22,9 @@ public interface ViteConfigService extends IService<ViteConfig> {
      */
     R getConfigs();
 
+    /** Administrator-only view including SMTP and payment credentials. */
+    R getPrivateConfigs();
+
     /**
      * 根据配置名获取配置值
      * @param name 配置名

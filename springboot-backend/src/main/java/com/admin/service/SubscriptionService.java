@@ -46,10 +46,15 @@ public class SubscriptionService {
         return subscriptions.selectOne(new QueryWrapper<UserSubscription>().eq("user_id", userId).eq("status", 1).orderByDesc("id").last("limit 1"));
     }
 
+    /** Administrative lifecycle operations must still see a disabled subscription record. */
+    public UserSubscription latest(long userId) {
+        return subscriptions.selectOne(new QueryWrapper<UserSubscription>().eq("user_id", userId).orderByDesc("id").last("limit 1"));
+    }
+
     @Transactional
     public UserSubscription adjust(long userId, Map<String, Object> values) {
-        UserSubscription item = current(userId);
-        if (item == null) throw new IllegalArgumentException("该用户没有有效套餐，请先分配套餐");
+        UserSubscription item = latest(userId);
+        if (item == null) throw new IllegalArgumentException("该用户没有套餐记录，请先分配套餐");
         long now = System.currentTimeMillis();
         if (values.containsKey("planId")) {
             long planId = number(values.get("planId"));
@@ -71,7 +76,7 @@ public class SubscriptionService {
 
     @Transactional
     public UserSubscription resetQuota(long userId) {
-        UserSubscription item = current(userId);
+        UserSubscription item = latest(userId);
         if (item == null) throw new IllegalArgumentException("该用户没有有效套餐");
         SubscriptionPlan plan = plans.selectById(item.getPlanId());
         long now = System.currentTimeMillis();
@@ -160,7 +165,7 @@ public class SubscriptionService {
         SubscriptionPlan plan = plans.selectById(planId);
         if (plan == null || plan.getStatus() == null || plan.getStatus() != 1) throw new IllegalArgumentException("套餐不存在或已停用");
         long now = System.currentTimeMillis();
-        UserSubscription old = current(userId);
+        UserSubscription old = latest(userId);
         long start = old != null && old.getExpiresAt() != null && old.getExpiresAt() > now ? old.getExpiresAt() : now;
         ZonedDateTime z = Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault());
         ZonedDateTime expiry = "year".equalsIgnoreCase(plan.getValidityUnit()) ? z.plusYears(plan.getValidityValue()) : z.plusMonths(plan.getValidityValue());

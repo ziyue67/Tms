@@ -5,6 +5,7 @@ import com.admin.entity.ViteConfig;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -46,23 +47,14 @@ public class EmailVerificationService {
         }
         String code = String.format("%06d", random.nextInt(1_000_000));
         JavaMailSenderImpl mailSender = createSender();
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setTo(normalized);
-        message.setSubject("TMS 注册验证码");
-        String from = config("smtp_from");
-        if (!from.isBlank()) message.setFrom(from);
-        message.setText("你的 TMS 注册验证码是 " + code + "，有效期 " + (expiry / 60) + " 分钟。请勿将验证码泄露给他人。");
-        mailSender.send(message);
+        sendMessage(mailSender, normalized, "TMS 注册验证码", "你的 TMS 注册验证码是 " + code + "，有效期 " + (expiry / 60) + " 分钟。请勿将验证码泄露给他人。");
         pending.put(normalized, new Entry(encoder.encode(code), now + expiry, now, 0));
     }
 
     public void sendTest(String email) {
         if (email == null || email.isBlank()) throw new IllegalArgumentException("测试邮箱不能为空");
         JavaMailSenderImpl mailSender = createSender();
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setTo(email.trim()); message.setSubject("TMS SMTP 测试"); message.setText("TMS SMTP 配置测试成功。");
-        String from = config("smtp_from"); if (!from.isBlank()) message.setFrom(from);
-        mailSender.send(message);
+        sendMessage(mailSender, email.trim(), "TMS SMTP 测试", "TMS SMTP 配置测试成功。");
     }
 
     public boolean consume(String email, String code) {
@@ -99,6 +91,22 @@ public class EmailVerificationService {
         props.put("mail.smtp.starttls.enable", configOr("smtp_starttls", "true"));
         props.put("mail.smtp.ssl.enable", configOr("smtp_ssl", "false"));
         return sender;
+    }
+
+    private void sendMessage(JavaMailSenderImpl sender, String recipient, String subject, String content) {
+        try {
+            MimeMessageHelper message = new MimeMessageHelper(sender.createMimeMessage(), false, "UTF-8");
+            message.setTo(recipient); message.setSubject(subject); message.setText(content, false);
+            String from = config("smtp_from");
+            String fromName = config("smtp_from_name");
+            if (!from.isBlank()) {
+                if (fromName.isBlank()) message.setFrom(from);
+                else message.setFrom(from, fromName);
+            }
+            sender.send(message.getMimeMessage());
+        } catch (Exception error) {
+            throw new IllegalArgumentException("邮件发送失败，请检查 SMTP 配置", error);
+        }
     }
 
     private String config(String name) { return configOr(name, ""); }

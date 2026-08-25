@@ -34,6 +34,8 @@ export const getAdminSubscriptionUser = (userId: number) => Network.get(`/admin/
 export const adjustAdminSubscriptionUser = (userId: number, data: any) => Network.put(`/admin/subscription/users/${userId}`, data);
 export const resetAdminSubscriptionQuota = (userId: number) => Network.post(`/admin/subscription/users/${userId}/reset-quota`);
 export const getAdminPaymentOrders = () => Network.get("/admin/subscription/orders");
+export const retryAdminPaymentOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/retry`);
+export const completeAdminTestOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/complete-test`);
 export const getCustomNodes = () => Network.get("/custom-nodes");
 export const importCustomNode = (name: string, link: string) => Network.post("/custom-nodes", { name, link });
 export const assignCustomNode = (nodeId: number, userId: number) => Network.post(`/custom-nodes/${nodeId}/assign`, { userId });

@@ -4,76 +4,131 @@ import com.admin.entity.PaymentOrder;
 import com.admin.entity.SubscriptionPlan;
 import com.admin.mapper.PaymentOrderMapper;
 import com.admin.mapper.SubscriptionPlanMapper;
+import com.admin.service.payment.PaymentCallback;
+import com.admin.service.payment.PaymentCheckout;
+import com.admin.service.payment.PaymentConfig;
+import com.admin.service.payment.PaymentProviderAdapter;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.*;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class PaymentService {
     private final PaymentOrderMapper orders;
     private final SubscriptionPlanMapper plans;
     private final SubscriptionService subscriptions;
-    private final ViteConfigService configs;
-    public PaymentService(PaymentOrderMapper orders, SubscriptionPlanMapper plans, SubscriptionService subscriptions, ViteConfigService configs) { this.orders=orders; this.plans=plans; this.subscriptions=subscriptions; this.configs=configs; }
+    private final PaymentConfig config;
+    private final Map<String, PaymentProviderAdapter> adapters;
 
-    public PaymentOrder create(long userId, long planId, String provider) {
-        SubscriptionPlan plan = plans.selectById(planId);
-        if (plan == null || plan.getStatus() == null || plan.getStatus() != 1 || plan.getForSale() == null || plan.getForSale() != 1) throw new IllegalArgumentException("套餐不可购买");
-        String p = provider == null ? "manual" : provider.trim().toLowerCase(Locale.ROOT);
-        if (!Set.of("alipay","wechat","easypay","stripe","manual").contains(p)) throw new IllegalArgumentException("不支持的支付方式");
-        if (!providerEnabled(p)) throw new IllegalArgumentException("该支付方式未启用");
-        PaymentOrder order = new PaymentOrder(); long now=System.currentTimeMillis();
-        order.setOrderNo("TMS" + now + randomSuffix()); order.setUserId(userId); order.setPlanId(planId); order.setProvider(p); order.setAmount(plan.getPrice()); order.setCurrency(plan.getCurrency()); order.setStatus("pending"); order.setCreatedTime(now); order.setUpdatedTime(now); orders.insert(order); return order;
+    public PaymentService(PaymentOrderMapper orders, SubscriptionPlanMapper plans, SubscriptionService subscriptions,
+                          PaymentConfig config, List<PaymentProviderAdapter> adapters) {
+        this.orders = orders;
+        this.plans = plans;
+        this.subscriptions = subscriptions;
+        this.config = config;
+        this.adapters = adapters.stream().collect(Collectors.toMap(PaymentProviderAdapter::key, adapter -> adapter));
     }
-    public List<Map<String, String>> enabledProviders() {
-        List<Map<String, String>> result = new ArrayList<>();
-        for (String provider : Arrays.asList("alipay", "wechat", "easypay", "stripe", "manual")) {
-            if (providerEnabled(provider)) { Map<String, String> item = new LinkedHashMap<>(); item.put("key", provider); item.put("label", providerLabel(provider)); result.add(item); }
+
+    @Transactional
+    public Map<String, Object> createCheckout(long userId, long planId, String provider) {
+        PaymentOrder order = createOrder(userId, planId, provider);
+        SubscriptionPlan plan = plans.selectById(planId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order", order);
+        if ("manual".equals(order.getProvider())) {
+            result.put("checkout", new PaymentCheckout("manual", null, null, "请联系管理员确认人工付款"));
+            return result;
+        }
+        result.put("checkout", adapter(order.getProvider()).createCheckout(order, plan));
+        return result;
+    }
+
+    public PaymentOrder createOrder(long userId, long planId, String provider) {
+        SubscriptionPlan plan = plans.selectById(planId);
+        if (plan == null || !Integer.valueOf(1).equals(plan.getStatus()) || !Integer.valueOf(1).equals(plan.getForSale())) throw new IllegalArgumentException("套餐不可购买");
+        String channel = provider == null ? "manual" : provider.trim().toLowerCase(Locale.ROOT);
+        if (!Arrays.asList("alipay", "wechat", "easypay", "stripe", "manual").contains(channel)) throw new IllegalArgumentException("不支持的支付方式");
+        if (!providerEnabled(channel)) throw new IllegalArgumentException("该支付方式未启用");
+        long now = System.currentTimeMillis();
+        PaymentOrder order = new PaymentOrder();
+        order.setOrderNo("TMS" + now + randomSuffix()); order.setUserId(userId); order.setPlanId(planId);
+        order.setProvider(channel); order.setAmount(plan.getPrice()); order.setCurrency(plan.getCurrency()); order.setStatus("pending");
+        order.setCreatedTime(now); order.setUpdatedTime(now); orders.insert(order);
+        return order;
+    }
+
+    public Map<String, Object> retryCheckout(String orderNo) {
+        PaymentOrder order = find(orderNo);
+        if ("paid".equals(order.getStatus())) throw new IllegalArgumentException("已支付订单不能重试");
+        Map<String, Object> result = new LinkedHashMap<>(); result.put("order", order);
+        if ("manual".equals(order.getProvider())) {
+            result.put("checkout", new PaymentCheckout("manual", null, null, "请联系管理员确认人工付款"));
+        } else {
+            result.put("checkout", adapter(order.getProvider()).createCheckout(order, plans.selectById(order.getPlanId())));
         }
         return result;
     }
-    @Transactional
-    public PaymentOrder completeTestOrder(String orderNo) {
-        if (!"true".equalsIgnoreCase(config("payment_test_mode", "false"))) throw new IllegalArgumentException("测试支付未启用");
-        PaymentOrder order = orders.selectOne(new QueryWrapper<PaymentOrder>().eq("order_no", orderNo).last("limit 1"));
-        if (order == null) throw new IllegalArgumentException("订单不存在");
-        if ("paid".equals(order.getStatus())) return order;
-        long now = System.currentTimeMillis();
-        com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<PaymentOrder> paid = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<PaymentOrder>().eq("id", order.getId()).eq("status", "pending").set("status", "paid").set("provider_trade_no", "test-" + order.getOrderNo()).set("paid_at", now).set("updated_time", now);
-        if (orders.update(null, paid) != 1) return orders.selectById(order.getId());
-        order.setStatus("paid"); order.setPaidAt(now); subscriptions.activate(order.getUserId(), order.getPlanId()); return order;
+
+    public List<Map<String, String>> enabledProviders() {
+        List<Map<String, String>> result = new ArrayList<>();
+        for (String provider : Arrays.asList("alipay", "wechat", "easypay", "stripe", "manual")) {
+            if (providerEnabled(provider)) {
+                Map<String, String> item = new LinkedHashMap<>(); item.put("key", provider); item.put("label", providerLabel(provider)); result.add(item);
+            }
+        }
+        return result;
     }
 
     @Transactional
-    public PaymentOrder callback(String provider, String orderNo, String tradeNo, String signature, String payload) {
-        PaymentOrder order=orders.selectOne(new QueryWrapper<PaymentOrder>().eq("order_no", orderNo).last("limit 1"));
-        if(order==null) throw new IllegalArgumentException("订单不存在");
-        if(!provider.equalsIgnoreCase(order.getProvider())) throw new IllegalArgumentException("支付渠道不匹配");
-        if("paid".equals(order.getStatus())) return order;
-        if(signature==null || signature.isBlank()) throw new IllegalArgumentException("缺少支付签名");
-        String secret = Optional.ofNullable(configs.getOne(new QueryWrapper<com.admin.entity.ViteConfig>().eq("name", "payment_" + provider.toLowerCase(Locale.ROOT) + "_secret"))).map(com.admin.entity.ViteConfig::getValue).orElse("");
-        if (secret.isBlank() || !constantTime(signature, hmacSha256(secret, orderNo + ":" + (tradeNo == null ? "" : tradeNo)))) throw new IllegalArgumentException("支付签名校验失败");
+    public PaymentOrder completeTestOrder(String orderNo) {
+        if (!"true".equalsIgnoreCase(config.get("payment_test_mode", "false"))) throw new IllegalArgumentException("测试支付未启用");
+        PaymentOrder order = find(orderNo);
+        if ("paid".equals(order.getStatus())) return order;
+        return markPaid(order, "test-" + order.getOrderNo(), "{\"provider\":\"test\"}");
+    }
+
+    @Transactional
+    public PaymentOrder callback(String provider, PaymentCallback callback) {
+        String channel = provider == null ? "" : provider.toLowerCase(Locale.ROOT);
+        PaymentProviderAdapter adapter = adapter(channel);
+        String orderNo = adapter.orderNo(callback);
+        if (orderNo == null || orderNo.isBlank()) throw new IllegalArgumentException("支付回调缺少订单号");
+        PaymentOrder order = find(orderNo);
+        if (!channel.equals(order.getProvider())) throw new IllegalArgumentException("支付渠道不匹配");
+        if ("paid".equals(order.getStatus())) return order;
+        adapter.verify(order, callback);
+        String tradeNo = adapter.tradeNo(callback);
+        if (tradeNo == null || tradeNo.isBlank()) throw new IllegalArgumentException("支付回调缺少交易号");
+        return markPaid(order, tradeNo, callback.getRawBody());
+    }
+
+    private PaymentOrder markPaid(PaymentOrder order, String tradeNo, String payload) {
+        if ("paid".equals(order.getStatus())) return order;
         long now = System.currentTimeMillis();
-        com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<PaymentOrder> paid = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<PaymentOrder>()
-                .eq("id", order.getId()).eq("status", "pending").set("status", "paid").set("provider_trade_no", tradeNo)
-                .set("callback_payload", payload).set("paid_at", now).set("updated_time", now);
+        UpdateWrapper<PaymentOrder> paid = new UpdateWrapper<PaymentOrder>().eq("id", order.getId()).eq("status", "pending")
+                .set("status", "paid").set("provider_trade_no", tradeNo).set("callback_payload", payload)
+                .set("paid_at", now).set("updated_time", now);
         if (orders.update(null, paid) != 1) return orders.selectById(order.getId());
         order.setStatus("paid"); order.setProviderTradeNo(tradeNo); order.setCallbackPayload(payload); order.setPaidAt(now); order.setUpdatedTime(now);
         subscriptions.activate(order.getUserId(), order.getPlanId());
         return order;
     }
-    public PaymentOrder get(long userId, String orderNo) { return orders.selectOne(new QueryWrapper<PaymentOrder>().eq("user_id",userId).eq("order_no",orderNo).last("limit 1")); }
+
+    public PaymentOrder get(long userId, String orderNo) { return orders.selectOne(new QueryWrapper<PaymentOrder>().eq("user_id", userId).eq("order_no", orderNo).last("limit 1")); }
     public List<PaymentOrder> listOrders() { return orders.selectList(new QueryWrapper<PaymentOrder>().orderByDesc("id")); }
-    private boolean providerEnabled(String provider) { return "true".equalsIgnoreCase(config("payment_" + provider + "_enabled", "manual".equals(provider) ? "true" : "false")); }
+    private PaymentOrder find(String orderNo) { PaymentOrder order = orders.selectOne(new QueryWrapper<PaymentOrder>().eq("order_no", orderNo).last("limit 1")); if (order == null) throw new IllegalArgumentException("订单不存在"); return order; }
+    private PaymentProviderAdapter adapter(String provider) { PaymentProviderAdapter adapter = adapters.get(provider); if (adapter == null) throw new IllegalArgumentException("不支持的支付方式"); return adapter; }
+    private boolean providerEnabled(String provider) { return "manual".equals(provider) ? "true".equalsIgnoreCase(config.get("payment_manual_enabled", "true")) : config.enabled(provider); }
     private String providerLabel(String provider) { return Map.of("alipay", "支付宝", "wechat", "微信支付", "easypay", "易支付", "stripe", "Stripe", "manual", "人工支付").get(provider); }
-    private String config(String name, String fallback) { return Optional.ofNullable(configs.getOne(new QueryWrapper<com.admin.entity.ViteConfig>().eq("name", name))).map(com.admin.entity.ViteConfig::getValue).filter(v -> !v.isBlank()).orElse(fallback); }
-    private String randomSuffix(){ return UUID.randomUUID().toString().replace("-","").substring(0,10).toUpperCase(Locale.ROOT); }
-    private String hmacSha256(String secret, String value) { try { Mac mac=Mac.getInstance("HmacSHA256"); mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256")); byte[] bytes=mac.doFinal(value.getBytes(StandardCharsets.UTF_8)); StringBuilder b=new StringBuilder(); for(byte x:bytes)b.append(String.format("%02x",x)); return b.toString(); } catch(Exception e){ throw new IllegalStateException(e); } }
-    private boolean constantTime(String a,String b){ return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8),b.getBytes(StandardCharsets.UTF_8)); }
+    private String randomSuffix() { return UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase(Locale.ROOT); }
 }

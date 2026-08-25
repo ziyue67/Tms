@@ -10,6 +10,19 @@ The upstream `LICENSE` and copyright notices remain applicable to the original c
 
 After importing `gost.sql`, apply `springboot-backend/src/main/resources/db/tms-account-commerce.sql` once. Configure SMTP and payment callback secrets in the administrator's website configuration before enabling registration or payment callbacks.
 
+### Payment provider configuration
+
+All payment credentials are saved only through the administrator's website configuration and are never exposed by public configuration APIs. Keep each provider disabled until every required field is set.
+
+| Provider | Required administrator configuration | Checkout / callback |
+|---|---|---|
+| Alipay | `payment_alipay_app_id`, application private key, Alipay public key, notify URL | Page-pay form, `POST /api/v1/payment/alipay/notify` with RSA2 verification |
+| WeChat Pay v3 | AppID, MchID, merchant serial, merchant private key, API v3 key, platform certificate, notify URL | Native QR code, `POST /api/v1/payment/wechat/notify` with WeChat signature and AES-GCM verification |
+| EasyPay | gateway, merchant ID, merchant key, payment type, notify URL | signed form, `POST /api/v1/payment/easypay/notify` with EasyPay MD5 verification |
+| Stripe | secret key, webhook secret, success URL, cancel URL | Checkout redirect, `POST /api/v1/payment/stripe/webhook` with `Stripe-Signature` verification |
+
+`payment_test_mode=true` enables the administrator-only test-order completion endpoint. It is for test deployments only and does not bypass any live provider callback verification.
+
 > 一个面板同时搞定**翻墙协议**、**转发中转**、以及**每用户限速 / 流量 / 到期**。
 
 <p>

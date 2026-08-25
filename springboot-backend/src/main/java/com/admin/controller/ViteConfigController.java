@@ -61,7 +61,7 @@ public class ViteConfigController extends BaseController {
     @RequireRole
     @PostMapping("/private-list")
     public R getPrivateConfigs() {
-        return viteConfigService.getConfigs();
+        return viteConfigService.getPrivateConfigs();
     }
 
     /**
