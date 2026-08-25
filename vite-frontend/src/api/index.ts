@@ -31,6 +31,7 @@ export const generateRedeemCodes = (planId: number, count: number, batchId?: str
 export const getAdminRedeemCodes = () => Network.get("/admin/subscription/redeem-codes");
 export const revokeRedeemCode = (id: number) => Network.post(`/admin/subscription/redeem-codes/${id}/revoke`);
 export const getAdminSubscriptionUser = (userId: number) => Network.get(`/admin/subscription/users/${userId}`);
+export const getAdminSubscriptionAudit = (userId: number) => Network.get(`/admin/subscription/users/${userId}/audit`);
 export const adjustAdminSubscriptionUser = (userId: number, data: any) => Network.put(`/admin/subscription/users/${userId}`, data);
 export const resetAdminSubscriptionQuota = (userId: number) => Network.post(`/admin/subscription/users/${userId}/reset-quota`);
 export const getAdminPaymentOrders = () => Network.get("/admin/subscription/orders");

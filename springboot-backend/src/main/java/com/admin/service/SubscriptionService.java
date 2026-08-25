@@ -42,6 +42,10 @@ public class SubscriptionService {
         return codes.selectList(query);
     }
 
+    public List<QuotaUsageLog> auditLogs(long userId) {
+        return quotaLogs.selectList(new QueryWrapper<QuotaUsageLog>().eq("user_id", userId).orderByDesc("id").last("limit 100"));
+    }
+
     public UserSubscription current(long userId) {
         return subscriptions.selectOne(new QueryWrapper<UserSubscription>().eq("user_id", userId).eq("status", 1).orderByDesc("id").last("limit 1"));
     }

@@ -27,6 +27,7 @@ public class AdminSubscriptionController {
     @RequireRole @GetMapping("/redeem-codes") public R codes(@RequestParam(required = false) Long planId, @RequestParam(required = false) Integer status) { return R.ok(service.redeemCodes(planId, status)); }
     @RequireRole @PostMapping("/redeem-codes/{id}/revoke") public R revokeCode(@PathVariable long id) { try { service.revokeCode(id); return R.ok(); } catch (IllegalArgumentException e) { return R.err(e.getMessage()); } }
     @RequireRole @GetMapping("/users/{userId}") public R userSubscription(@PathVariable long userId) { return R.ok(service.latest(userId)); }
+    @RequireRole @GetMapping("/users/{userId}/audit") public R audit(@PathVariable long userId) { return R.ok(service.auditLogs(userId)); }
     @RequireRole @PutMapping("/users/{userId}") public R adjustUser(@PathVariable long userId, @RequestBody Map<String,Object> body) { try { return R.ok(service.adjust(userId, body)); } catch (IllegalArgumentException e) { return R.err(e.getMessage()); } }
     @RequireRole @PostMapping("/users/{userId}/reset-quota") public R resetQuota(@PathVariable long userId) { try { return R.ok(service.resetQuota(userId)); } catch (IllegalArgumentException e) { return R.err(e.getMessage()); } }
     @RequireRole @GetMapping("/orders") public R orders() { return R.ok(payments.listOrders()); }
