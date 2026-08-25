@@ -39,7 +39,6 @@ public class PaymentService {
         this.adapters = adapters.stream().collect(Collectors.toMap(PaymentProviderAdapter::key, adapter -> adapter));
     }
 
-    @Transactional
     public Map<String, Object> createCheckout(long userId, long planId, String provider) {
         PaymentOrder order = createOrder(userId, planId, provider);
         SubscriptionPlan plan = plans.selectById(planId);
@@ -49,8 +48,14 @@ public class PaymentService {
             result.put("checkout", new PaymentCheckout("manual", null, null, "请联系管理员确认人工付款"));
             return result;
         }
-        result.put("checkout", adapter(order.getProvider()).createCheckout(order, plan));
-        return result;
+        try {
+            result.put("checkout", adapter(order.getProvider()).createCheckout(order, plan));
+            return result;
+        } catch (IllegalArgumentException error) {
+            order.setStatus("failed"); order.setCallbackPayload(error.getMessage()); order.setUpdatedTime(System.currentTimeMillis());
+            orders.updateById(order);
+            throw error;
+        }
     }
 
     public PaymentOrder createOrder(long userId, long planId, String provider) {
@@ -70,11 +75,15 @@ public class PaymentService {
     public Map<String, Object> retryCheckout(String orderNo) {
         PaymentOrder order = find(orderNo);
         if ("paid".equals(order.getStatus())) throw new IllegalArgumentException("已支付订单不能重试");
+        if (!"pending".equals(order.getStatus())) {
+            order.setStatus("pending"); order.setCallbackPayload(null); order.setUpdatedTime(System.currentTimeMillis()); orders.updateById(order);
+        }
         Map<String, Object> result = new LinkedHashMap<>(); result.put("order", order);
         if ("manual".equals(order.getProvider())) {
             result.put("checkout", new PaymentCheckout("manual", null, null, "请联系管理员确认人工付款"));
         } else {
-            result.put("checkout", adapter(order.getProvider()).createCheckout(order, plans.selectById(order.getPlanId())));
+            try { result.put("checkout", adapter(order.getProvider()).createCheckout(order, plans.selectById(order.getPlanId()))); }
+            catch (IllegalArgumentException error) { order.setStatus("failed"); order.setCallbackPayload(error.getMessage()); order.setUpdatedTime(System.currentTimeMillis()); orders.updateById(order); throw error; }
         }
         return result;
     }
