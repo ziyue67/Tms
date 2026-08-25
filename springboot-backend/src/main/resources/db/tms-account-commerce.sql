@@ -1,7 +1,14 @@
 -- TMS account, subscription and commerce migration (MySQL 5.7+).
--- Apply once after gost.sql. All statements are additive for existing installs.
-ALTER TABLE `user` ADD COLUMN `email` varchar(190) DEFAULT NULL COMMENT '注册邮箱';
-ALTER TABLE `user` ADD UNIQUE KEY `uk_user_email` (`email`);
+-- Safe to rerun after gost.sql. All statements are additive for existing installs.
+SET @tms_schema = DATABASE();
+SET @tms_sql = (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE `user` ADD COLUMN `email` varchar(190) DEFAULT NULL COMMENT ''注册邮箱''',
+  'SELECT 1') FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @tms_schema AND TABLE_NAME = 'user' AND COLUMN_NAME = 'email');
+PREPARE tms_stmt FROM @tms_sql; EXECUTE tms_stmt; DEALLOCATE PREPARE tms_stmt;
+SET @tms_sql = (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE `user` ADD UNIQUE KEY `uk_user_email` (`email`)',
+  'SELECT 1') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = @tms_schema AND TABLE_NAME = 'user' AND INDEX_NAME = 'uk_user_email');
+PREPARE tms_stmt FROM @tms_sql; EXECUTE tms_stmt; DEALLOCATE PREPARE tms_stmt;
 
 CREATE TABLE IF NOT EXISTS `subscription_plan` (
   `id` bigint NOT NULL AUTO_INCREMENT,

@@ -8,7 +8,7 @@ The upstream `LICENSE` and copyright notices remain applicable to the original c
 
 ### Account and commerce migration
 
-After importing `gost.sql`, apply `springboot-backend/src/main/resources/db/tms-account-commerce.sql` once. Configure SMTP and payment callback secrets in the administrator's website configuration before enabling registration or payment callbacks.
+After importing `gost.sql`, apply `springboot-backend/src/main/resources/db/tms-account-commerce.sql`. The user-email additions are conditional, so the migration can be rerun safely on an existing database. Configure SMTP and payment callback secrets in the administrator's website configuration before enabling registration or payment callbacks.
 
 ### Payment provider configuration
 
