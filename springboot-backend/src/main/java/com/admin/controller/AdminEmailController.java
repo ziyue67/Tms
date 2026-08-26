@@ -12,4 +12,6 @@ public class AdminEmailController {
     public AdminEmailController(EmailVerificationService service) { this.service = service; }
     @RequireRole @PostMapping("/test")
     public R test(@RequestBody Map<String,String> body) { try { service.sendTest(body.get("email")); return R.ok(); } catch (IllegalArgumentException e) { return R.err(e.getMessage()); } }
+    @RequireRole @GetMapping("/audit")
+    public R audit(@RequestParam(defaultValue = "50") int limit) { return R.ok(service.audit(limit)); }
 }
