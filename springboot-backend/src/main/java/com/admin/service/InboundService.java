@@ -41,6 +41,9 @@ public interface InboundService extends IService<Inbound> {
     /** 将某台原生节点分配给所有有效套餐的普通用户，生成可计费的独立凭据。 */
     R provisionSubscribedUsers(Long nodeId);
 
+    /** Same operation for one relay landing group. */
+    R provisionSubscribedUsers(Long nodeId, Long landingId);
+
     /** 取消某个入站用户 */
     R unassignUser(Long inboundUserId);
 

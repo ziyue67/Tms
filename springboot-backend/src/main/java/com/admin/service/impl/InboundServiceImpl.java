@@ -574,6 +574,11 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
 
     @Override
     public R provisionSubscribedUsers(Long nodeId) {
+        return provisionSubscribedUsers(nodeId, null);
+    }
+
+    @Override
+    public R provisionSubscribedUsers(Long nodeId, Long landingId) {
         Node node = nodeMapper.selectById(nodeId);
         if (node == null) {
             return R.err("节点不存在");
@@ -592,6 +597,10 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
             InboundUserDto dto = new InboundUserDto();
             dto.setUserId(user.getId());
             dto.setNodeId(nodeId);
+            if (landingId != null) {
+                dto.setRelay(true);
+                dto.setLandingId(landingId);
+            }
             R assigned = assignAllToUser(dto);
             if (assigned.getCode() == 0) {
                 provisioned++;

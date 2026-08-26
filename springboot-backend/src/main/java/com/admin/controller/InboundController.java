@@ -186,6 +186,14 @@ public class InboundController extends BaseController {
         return inboundService.provisionSubscribedUsers(asLong(body.get("nodeId")));
     }
 
+    /** 为已存在的某条中转线路补分配所有有效套餐用户。 */
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/provision-subscribed-users-relay")
+    public R provisionSubscribedUsersRelay(@RequestBody Map<String, Object> body) {
+        return inboundService.provisionSubscribedUsers(asLong(body.get("nodeId")), asLong(body.get("landingId")));
+    }
+
     @LogAnnotation
     @RequireRole
     @PostMapping("/reload-node")
