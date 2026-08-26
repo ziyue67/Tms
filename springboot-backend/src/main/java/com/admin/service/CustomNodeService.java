@@ -80,6 +80,15 @@ public class CustomNodeService {
 
     public List<CustomNode> list() { return nodes.selectList(new QueryWrapper<CustomNode>().orderByDesc("id")); }
 
+    /** Only admin-side conversion endpoints may read the stored sharing link. */
+    public CustomNode getForMeteredRelay(Long nodeId) {
+        CustomNode node = nodes.selectById(nodeId);
+        if (node == null) throw new IllegalArgumentException("自定义节点不存在");
+        if (node.getStatus() == null || node.getStatus() != 1) throw new IllegalArgumentException("自定义节点已停用");
+        if (node.getRawLink() == null || node.getRawLink().isBlank()) throw new IllegalArgumentException("自定义节点缺少分享链接");
+        return node;
+    }
+
     public List<Map<String, Object>> listWithAssignments() {
         List<Map<String, Object>> result = new ArrayList<>();
         for (CustomNode node : list()) {

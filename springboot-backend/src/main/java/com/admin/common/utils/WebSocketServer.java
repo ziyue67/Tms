@@ -280,6 +280,12 @@ public class WebSocketServer extends TextWebSocketHandler {
                 // 网页管理员连接
                 activeSessions.add(session);
                 log.info("管理员连接建立，sessionId: {}", session.getId());
+                // 管理页面晚于节点连接打开时，也立即拉一次状态，避免卡片一直显示 "-"。
+                for (WebSocketSession nodeSession : nodeSessions.values()) {
+                    if (nodeSession != null && nodeSession.isOpen()) {
+                        sendToUser(nodeSession, "{\"type\":\"call\"}", (String) nodeSession.getAttributes().get("nodeSecret"));
+                    }
+                }
             } else {
                 // 客户端节点连接
                 Long nodeId = Long.valueOf(id);
@@ -340,6 +346,8 @@ public class WebSocketServer extends TextWebSocketHandler {
                         res.put("type", "status");
                         res.put("data", 1);
                         broadcastMessage(res.toJSONString());
+                        // 节点上线后主动索取系统信息；不依赖管理员页面先发消息。
+                        sendToUser(session, "{\"type\":\"call\"}", (String) session.getAttributes().get("nodeSecret"));
                     } else {
                         log.info("节点 {} 状态更新失败", nodeId);
                     }

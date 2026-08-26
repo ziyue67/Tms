@@ -75,7 +75,9 @@ function isTokenExpired(response: ApiResponse) {
  */
 const SLOW_PATHS = [
   '/inbound/assign-all',
+  '/inbound/one-click',
   '/inbound/provision-subscribed-users',
+  '/custom-nodes/',
   '/inbound/assign-self',
   '/inbound/assign',
   '/inbound/one-click',

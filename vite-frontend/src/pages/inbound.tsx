@@ -24,6 +24,7 @@ import {
   importCustomNode,
   deleteCustomNode,
   disableCustomNode,
+  buildMeteredCustomRelay,
 } from "@/api";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { SNI_PRESETS, DEFAULT_SNI, cleanSni } from "@/config/sni";
@@ -52,7 +53,11 @@ export default function InboundPage() {
   const [oneClickOpen, setOneClickOpen] = useState(false);
   const [oneClickNodeId, setOneClickNodeId] = useState<number | null>(null);
   const [oneClickSni, setOneClickSni] = useState<string>(DEFAULT_SNI);
+  const [oneClickScope, setOneClickScope] = useState<'manual' | 'global'>('manual');
   const [oneClickLoading, setOneClickLoading] = useState(false);
+  const [meteredRelayOpen, setMeteredRelayOpen] = useState(false);
+  const [meteredRelayForm, setMeteredRelayForm] = useState<{ customNode: any | null; ingressNodeId: number | null; sni: string }>({ customNode: null, ingressNodeId: null, sni: DEFAULT_SNI });
+  const [meteredRelayLoading, setMeteredRelayLoading] = useState(false);
 
   // 机器卡「分配用户」:把整台机器的协议分给车友(只分配,链接去「用户管理」拿)
   const [assignOpen, setAssignOpen] = useState(false);
@@ -150,7 +155,18 @@ export default function InboundPage() {
     try {
       const res = await oneClickInbound(oneClickNodeId, cleanSni(oneClickSni));
       if (res.code === 0) {
-        toast.success("一键添加完成:整机全套协议已建好");
+        if (oneClickScope === 'global') {
+          const provisioned = await provisionSubscribedUsers(oneClickNodeId);
+          if (provisioned.code !== 0) {
+            toast.error(`协议已创建，但全局分配失败：${provisioned.msg || '请在机器卡重试'}`);
+          } else {
+            const errors = Array.isArray(provisioned.data?.errors) ? provisioned.data.errors : [];
+            if (errors.length) toast.error(`协议已创建；${provisioned.data?.provisionedUsers || 0} 个用户已分配，${errors.length} 个失败`);
+            else toast.success(`整机协议已创建，并已分配给 ${provisioned.data?.provisionedUsers || 0} 个套餐用户`);
+          }
+        } else {
+          toast.success("一键添加完成:整机全套协议已建好");
+        }
         setOneClickOpen(false);
         loadAll();
       } else {
@@ -160,6 +176,29 @@ export default function InboundPage() {
       toast.error("一键添加失败");
     }
     setOneClickLoading(false);
+  };
+
+  const openMeteredRelay = (customNode: any) => {
+    setMeteredRelayForm({ customNode, ingressNodeId: null, sni: DEFAULT_SNI });
+    setMeteredRelayOpen(true);
+  };
+
+  const handleBuildMeteredRelay = async () => {
+    const { customNode, ingressNodeId, sni } = meteredRelayForm;
+    if (!customNode || !ingressNodeId) return toast.error('请选择承载中转的 TMS 节点');
+    setMeteredRelayLoading(true);
+    try {
+      const response = await buildMeteredCustomRelay(customNode.id, ingressNodeId, cleanSni(sni));
+      if (response.code !== 0) return toast.error(response.msg || '创建计费中转失败');
+      const provisioned = response.data?.provision?.provisionedUsers || 0;
+      toast.success(`已将「${customNode.name}」设为计费中转，并分配给 ${provisioned} 个套餐用户`);
+      setMeteredRelayOpen(false);
+      loadAll();
+    } catch (error) {
+      toast.error('创建计费中转失败');
+    } finally {
+      setMeteredRelayLoading(false);
+    }
   };
 
   const openNodeAssign = (n: any, count: number) => {
@@ -253,6 +292,7 @@ export default function InboundPage() {
             color="secondary"
             onPress={() => {
               setOneClickNodeId(null);
+              setOneClickScope('manual');
               setOneClickOpen(true);
             }}
           >
@@ -378,7 +418,7 @@ export default function InboundPage() {
       {customNodes.length > 0 && <Card>
         <CardBody className="space-y-3">
           <div className="font-semibold">自定义订阅节点</div>
-            <div className="text-xs text-default-500">导入节点只作为外部订阅源，不会创建本机入站、转发或 GOST 服务。可设为全局，或只进入指定用户的聚合订阅。</div>
+            <div className="text-xs text-default-500">外部订阅默认直连，不能识别具体用户流量。点击“设为计费中转”后，用户连接 TMS 原生协议，流量才会计入套餐。</div>
           {customNodes.map((node) => <div key={node.id} className="flex flex-wrap items-center gap-2 border-t border-divider pt-3">
             <Chip size="sm" color={node.status === 1 ? "success" : "default"}>{({ vless: "VLESS-Reality", trojan: "Trojan-Reality", vmess: "VMess", hysteria2: "Hysteria2", tuic: "TUIC", anytls: "AnyTLS" } as any)[node.protocol] || node.protocol}</Chip>
             <span className="font-medium">{node.name}</span>
@@ -387,6 +427,7 @@ export default function InboundPage() {
               const user = users.find((u) => Number(u.id) === Number(id));
               return <Chip key={id} size="sm" variant="flat">{user?.user || `用户 #${id}`}</Chip>;
             })}
+            {node.status === 1 && <Button size="sm" color="secondary" variant="flat" onPress={() => openMeteredRelay(node)}>设为计费中转</Button>}
             {node.status === 1 && <Button size="sm" color="warning" variant="flat" onPress={async () => { if (window.confirm(`停用「${node.name}」？`)) { const r = await disableCustomNode(node.id); if (r.code === 0) { toast.success("已停用"); loadAll(); } else toast.error(r.msg || "停用失败"); } }}>停用</Button>}
             <Button size="sm" color="danger" variant="flat" onPress={async () => { if (window.confirm(`永久删除「${node.name}」？此操作不可恢复`)) { const r = await deleteCustomNode(node.id); if (r.code === 0) { toast.success("已删除"); loadAll(); } else toast.error(r.msg || "删除失败"); } }}>删除</Button>
           </div>)}
@@ -532,6 +573,15 @@ export default function InboundPage() {
                 <SelectItem key={n.id}>{n.name}</SelectItem>
               ))}
             </Select>
+            <Select
+              label="订阅范围"
+              selectedKeys={[oneClickScope]}
+              onSelectionChange={(keys) => setOneClickScope(String(Array.from(keys)[0] || 'manual') as 'manual' | 'global')}
+              description={oneClickScope === 'global' ? '创建后立即给所有有效套餐用户生成独立凭据，流量按用户套餐统计。' : '只创建协议，之后可在机器卡手动分配用户。'}
+            >
+              <SelectItem key="manual">手动分配用户</SelectItem>
+              <SelectItem key="global">全局聚合（所有有效套餐用户）</SelectItem>
+            </Select>
             {/* Reality 借壳域名:给个常用列表,也允许自己输 */}
             <Autocomplete
               label="伪装域名(Reality 借壳)"
@@ -548,6 +598,37 @@ export default function InboundPage() {
           <ModalFooter>
             <Button variant="light" onPress={() => setOneClickOpen(false)}>取消</Button>
             <Button color="secondary" isLoading={oneClickLoading} onPress={handleOneClick}>一键全建</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={meteredRelayOpen} onClose={() => setMeteredRelayOpen(false)}>
+        <ModalContent>
+          <ModalHeader>设为计费中转</ModalHeader>
+          <ModalBody className="space-y-3">
+            <p className="text-sm text-default-500">“{meteredRelayForm.customNode?.name}”将作为出站。用户订阅会拿到 TMS 的独立原生协议，流量经该外部节点出网并计入各自套餐。</p>
+            <Select
+              label="承载中转的 TMS 节点"
+              placeholder="选择在线节点"
+              selectedKeys={meteredRelayForm.ingressNodeId ? [String(meteredRelayForm.ingressNodeId)] : []}
+              onSelectionChange={(keys) => setMeteredRelayForm({ ...meteredRelayForm, ingressNodeId: Number(Array.from(keys)[0]) })}
+            >
+              {nodes.filter((node) => node.status === 1).map((node) => <SelectItem key={String(node.id)}>{node.name}</SelectItem>)}
+            </Select>
+            <Autocomplete
+              label="伪装域名（Reality）"
+              allowsCustomValue
+              defaultItems={SNI_PRESETS}
+              inputValue={meteredRelayForm.sni}
+              onInputChange={(value) => setMeteredRelayForm({ ...meteredRelayForm, sni: value })}
+              onSelectionChange={(key) => { if (key) setMeteredRelayForm({ ...meteredRelayForm, sni: String(key) }); }}
+            >
+              {(item: any) => <AutocompleteItem key={item.value}>{item.label}</AutocompleteItem>}
+            </Autocomplete>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={() => setMeteredRelayOpen(false)}>取消</Button>
+            <Button color="secondary" isLoading={meteredRelayLoading} onPress={handleBuildMeteredRelay}>创建并全局分配</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
