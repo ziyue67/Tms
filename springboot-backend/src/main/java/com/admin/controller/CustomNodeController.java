@@ -45,9 +45,6 @@ public class CustomNodeController {
     private R buildMeteredRelay(CustomNode custom, Long ingressNodeId, Map<String, Object> body) {
         R created = inboundService.oneClickRelay(ingressNodeId, custom.getRawLink(), "中转-" + custom.getName(), body.get("sni") == null ? null : String.valueOf(body.get("sni")));
         if (created.getCode() != 0) return created;
-        // Direct external links carry no user identity. Hide the source as soon as its
-        // metered relay is ready so clients cannot bypass package accounting.
-        service.disable(custom.getId());
         if (!Boolean.parseBoolean(String.valueOf(body.getOrDefault("provisionSubscribedUsers", true)))) return created;
         Long landingId = null;
         if (created.getData() instanceof java.util.List<?> rows && !rows.isEmpty() && rows.get(0) instanceof com.admin.entity.Inbound) {
@@ -57,6 +54,9 @@ public class CustomNodeController {
                 ? inboundService.provisionSubscribedUsers(ingressNodeId)
                 : inboundService.provisionSubscribedUsers(ingressNodeId, landingId);
         if (provisioned.getCode() != 0) return R.err("中转已创建，但全局分配失败:" + provisioned.getMsg());
+        // This record is only the imported source link. The real user-facing, metered
+        // endpoint is the generated relay, so remove the temporary source completely.
+        service.delete(custom.getId());
         java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("relay", created.getData());
         result.put("provision", provisioned.getData());
