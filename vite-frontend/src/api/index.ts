@@ -41,10 +41,11 @@ export const getAdminPaymentOrders = () => Network.get("/admin/subscription/orde
 export const retryAdminPaymentOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/retry`);
 export const completeAdminTestOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/complete-test`);
 export const getCustomNodes = () => Network.get("/custom-nodes");
-export const importCustomNode = (name: string, link: string) => Network.post("/custom-nodes", { name, link });
+export const importCustomNode = (name: string, link: string, visibility: "global" | "users" = "global", userIds: number[] = []) => Network.post("/custom-nodes", { name, link, visibility, userIds });
 export const assignCustomNode = (nodeId: number, userId: number) => Network.post(`/custom-nodes/${nodeId}/assign`, { userId });
 export const unassignCustomNode = (nodeId: number, userId: number) => Network.delete(`/custom-nodes/${nodeId}/assign/${userId}`);
 export const deleteCustomNode = (nodeId: number) => Network.delete(`/custom-nodes/${nodeId}`);
+export const disableCustomNode = (nodeId: number) => Network.post(`/custom-nodes/${nodeId}/disable`);
 export const getAuthConfig = () => Network.get("/auth/config");
 export const getPaymentOrder = (orderNo: string) => Network.get(`/payment/orders/${orderNo}`);
 export const getMyPaymentOrders = () => Network.get("/payment/orders");

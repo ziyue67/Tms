@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS `custom_node` (
   `protocol` varchar(32) NOT NULL,
   `raw_link` text NOT NULL,
   `parsed_json` text NOT NULL,
+  `visibility` varchar(12) NOT NULL DEFAULT 'global',
   `status` tinyint NOT NULL DEFAULT 1,
   `created_time` bigint NOT NULL,
   `updated_time` bigint NOT NULL,

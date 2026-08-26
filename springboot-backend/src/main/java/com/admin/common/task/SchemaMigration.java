@@ -59,11 +59,15 @@ public class SchemaMigration implements ApplicationRunner {
         createTable(c, d, "payment_order", "(" +
                 "id " + id + ", order_no VARCHAR(64) NOT NULL, user_id BIGINT NOT NULL, plan_id BIGINT NOT NULL, provider VARCHAR(20) NOT NULL, amount DECIMAL(12,2) NOT NULL, currency VARCHAR(10) NOT NULL DEFAULT 'CNY', status VARCHAR(20) NOT NULL DEFAULT 'pending', provider_trade_no VARCHAR(128) NULL, callback_payload TEXT NULL, paid_at BIGINT NULL, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (order_no))");
         createTable(c, d, "custom_node", "(" +
-                "id " + id + ", name VARCHAR(255) NOT NULL, protocol VARCHAR(32) NOT NULL, raw_link TEXT NOT NULL, parsed_json TEXT NOT NULL, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id))");
+                "id " + id + ", name VARCHAR(255) NOT NULL, protocol VARCHAR(32) NOT NULL, raw_link TEXT NOT NULL, parsed_json TEXT NOT NULL, visibility VARCHAR(12) NOT NULL DEFAULT 'global', status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id))");
+        addColumn(c, d, "custom_node", "visibility", "VARCHAR(12) NOT NULL DEFAULT 'global'");
         createTable(c, d, "user_custom_node", "(" +
                 "id " + id + ", user_id BIGINT NOT NULL, custom_node_id BIGINT NOT NULL, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (user_id, custom_node_id))");
         // Temporary verification data is Redis-only. Remove the legacy table from older installations.
         dropTable(c, d, "verification_code");
+        // Before visibility was introduced, only nodes with assignment rows were
+        // user-scoped. Preserve that behavior for existing installations.
+        execute(c, "UPDATE " + d.q("custom_node") + " n SET " + d.q("visibility") + "='users' WHERE " + d.q("visibility") + "='global' AND EXISTS (SELECT 1 FROM " + d.q("user_custom_node") + " a WHERE a.custom_node_id=n.id AND a.status=1)");
     }
 
     private void addColumn(Connection c, Dialect d, String table, String column, String definition) throws SQLException {
