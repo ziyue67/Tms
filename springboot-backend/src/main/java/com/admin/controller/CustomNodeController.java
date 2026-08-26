@@ -37,7 +37,13 @@ public class CustomNodeController {
             R created = inboundService.oneClickRelay(ingressNodeId, custom.getRawLink(), "中转-" + custom.getName(), body.get("sni") == null ? null : String.valueOf(body.get("sni")));
             if (created.getCode() != 0) return created;
             if (Boolean.parseBoolean(String.valueOf(body.getOrDefault("provisionSubscribedUsers", true)))) {
-                R provisioned = inboundService.provisionSubscribedUsers(ingressNodeId);
+                Long landingId = null;
+                if (created.getData() instanceof java.util.List<?> rows && !rows.isEmpty() && rows.get(0) instanceof com.admin.entity.Inbound) {
+                    landingId = ((com.admin.entity.Inbound) rows.get(0)).getLandingId();
+                }
+                R provisioned = landingId == null
+                        ? inboundService.provisionSubscribedUsers(ingressNodeId)
+                        : inboundService.provisionSubscribedUsers(ingressNodeId, landingId);
                 if (provisioned.getCode() != 0) return R.err("中转已创建，但全局分配失败:" + provisioned.getMsg());
                 java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
                 result.put("relay", created.getData());
