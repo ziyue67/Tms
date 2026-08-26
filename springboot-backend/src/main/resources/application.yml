@@ -1,13 +1,14 @@
 spring:
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      database: ${REDIS_DATABASE:0}
-      ssl:
-        enabled: ${REDIS_SSL:false}
-      timeout: ${REDIS_TIMEOUT:2s}
+  redis:
+    # Spring Boot 2.7 accepts redis://[:password@]host:port/database here.
+    # When empty, the individual REDIS_HOST/PORT/PASSWORD settings below apply.
+    url: ${REDIS_URL:}
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DATABASE:0}
+    ssl: ${REDIS_SSL:false}
+    timeout: ${REDIS_TIMEOUT:2s}
   datasource:
     driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
     # Set DB_URL for an external MySQL or PostgreSQL server. The legacy DB_* values remain supported.

@@ -426,6 +426,35 @@ get_config_params() {
   JWT_SECRET=$(generate_random)
 }
 
+# REDIS_URL is a standard Redis URI, for example:
+# redis://:password@redis.example.com:6379/0
+# Keep this override separate from docker-compose.yml because update_panel
+# refreshes the latter from GitHub on every update.
+configure_external_redis() {
+  local redis_url="${REDIS_URL:-}"
+  if [ -z "$redis_url" ] && [ -f .env ]; then
+    redis_url="$(sed -n 's/^REDIS_URL=//p' .env | tail -n 1)"
+  fi
+
+  if [ -n "$redis_url" ]; then
+    sed -i '/^REDIS_URL=/d' .env
+    printf 'REDIS_URL=%s\n' "$redis_url" >> .env
+    cat > docker-compose.override.yml <<'EOF'
+# TMS_EXTERNAL_REDIS_OVERRIDE
+# REDIS_URL is set in .env. Do not start or pull the bundled Redis service.
+services:
+  redis:
+    profiles: [disabled]
+  backend:
+    depends_on: !reset []
+EOF
+    echo "   ✔ 检测到 REDIS_URL，使用外部 Redis，不启动本地 Redis 容器"
+  elif [ -f docker-compose.override.yml ] && grep -q 'TMS_EXTERNAL_REDIS_OVERRIDE' docker-compose.override.yml; then
+    rm -f docker-compose.override.yml
+    echo "   ℹ 未设置 REDIS_URL，恢复内置 Redis 配置"
+  fi
+}
+
 # 安装功能
 install_panel() {
   echo "🚀 开始安装面板..."
@@ -459,6 +488,8 @@ FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
 EOF
 
+  configure_external_redis
+
   # 清理上一次失败/中断留下的旧容器与数据卷。
   # 关键坑:MySQL 初始化中断过一次后,mysql_data 卷里会残留半拉子文件,
   # 再启动时报 "--initialize specified but the data directory has files in it. Aborting.",
@@ -471,6 +502,11 @@ EOF
 
   echo "[3/4] 拉取镜像并启动服务(首次约 1-3 分钟,请耐心等待)..."
   # 进度条太吵会把最后的访问信息刷走,这里只留结果;失败时再把日志打出来
+  if ! $DOCKER_CMD pull >/tmp/tms_pull.log 2>&1; then
+    echo "      ✘ 拉取镜像失败,以下是错误信息:"
+    tail -30 /tmp/tms_pull.log
+    exit 1
+  fi
   if ! $DOCKER_CMD up -d >/tmp/tms_up.log 2>&1; then
     echo "      ✘ 启动失败,以下是错误信息:"
     tail -30 /tmp/tms_up.log
@@ -535,6 +571,7 @@ update_panel() {
   if curl -fsSL -o docker-compose.yml.new "$DOCKER_COMPOSE_URL" && grep -q "services:" docker-compose.yml.new; then
     mv -f docker-compose.yml.new docker-compose.yml
     normalize_tms_subnet || { echo "      ✘ 网段校正失败,停止更新以保护现有服务"; return 1; }
+    configure_external_redis
     echo "      ✔ 配置文件已更新"
   else
     rm -f docker-compose.yml.new

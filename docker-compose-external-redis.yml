@@ -1,0 +1,7 @@
+# Use with any bundled Compose file when REDIS_URL points at an external Redis:
+# docker compose -f docker-compose-v4.yml -f docker-compose-external-redis.yml --env-file .env up -d
+services:
+  redis:
+    profiles: [disabled]
+  backend:
+    depends_on: !reset []

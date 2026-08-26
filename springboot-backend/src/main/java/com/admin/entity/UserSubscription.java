@@ -1,13 +1,18 @@
 package com.admin.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 @Data
 @TableName("user_subscription")
 public class UserSubscription {
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long userId;
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long planId;
     private Long startsAt;
     private Long expiresAt;
