@@ -43,6 +43,22 @@ interface ConfigItem {
   dependsValue?: string; // 依赖的配置项值
 }
 
+type ConfigSection = 'general' | 'security' | 'payment' | 'email';
+
+const CONFIG_SECTIONS: { key: ConfigSection; label: string; description: string }[] = [
+  { key: 'general', label: '通用设置', description: '面板名称、对接地址与订阅格式' },
+  { key: 'security', label: '安全与认证', description: '登录验证码与认证服务状态' },
+  { key: 'payment', label: '支付设置', description: '支付系统、渠道和支付回调配置' },
+  { key: 'email', label: '邮件设置', description: 'SMTP、验证码时效与邮件模板' },
+];
+
+const SECTION_KEYS: Record<ConfigSection, string[]> = {
+  general: ['ip', 'app_name'],
+  security: ['captcha_enabled', 'captcha_type'],
+  payment: [],
+  email: [],
+};
+
 const DEFAULT_REGISTER_TEMPLATE = '<!DOCTYPE html><html><body style="margin:0;padding:20px;background:#f5f5f5;font-family:Arial,sans-serif"><div style="max-width:600px;margin:auto;background:#fff;border-radius:8px;overflow:hidden"><div style="padding:30px;text-align:center;background:#667eea;color:#fff"><h1>{{app_name}}</h1></div><div style="padding:40px 30px;text-align:center"><h2>邮箱验证码</h2><p>请使用下面的验证码完成注册：</p><div style="padding:16px;background:#f3f4f6;border-radius:6px;font-size:32px;font-weight:bold;letter-spacing:8px">{{code}}</div><p>验证码将在 <strong>{{expires_minutes}} 分钟</strong> 后失效。</p></div><div style="padding:20px;text-align:center;background:#f8f9fa;color:#999;font-size:12px">这是系统自动发送的邮件，请勿直接回复。</div></div></body></html>';
 const DEFAULT_RESET_TEMPLATE = '<!DOCTYPE html><html><body style="margin:0;padding:20px;background:#f5f5f5;font-family:Arial,sans-serif"><div style="max-width:600px;margin:auto;background:#fff;border-radius:8px;overflow:hidden"><div style="padding:30px;text-align:center;background:#667eea;color:#fff"><h1>{{app_name}}</h1></div><div style="padding:40px 30px;text-align:center"><h2>密码重置请求</h2><p>请点击下方按钮设置新密码：</p><p><a href="{{reset_url}}" style="display:inline-block;padding:12px 24px;background:#667eea;color:#fff;text-decoration:none;border-radius:5px">重置密码</a></p><p>该链接将在 <strong>{{expires_minutes}} 分钟</strong> 后失效且只能使用一次。</p></div><div style="padding:20px;text-align:center;background:#f8f9fa;color:#999;font-size:12px">这是系统自动发送的邮件，请勿直接回复。</div></div></body></html>';
 
@@ -178,6 +194,7 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [originalConfigs, setOriginalConfigs] = useState<Record<string, string>>(initialConfigs);
+  const [activeSection, setActiveSection] = useState<ConfigSection>('general');
 
   // 权限检查
   useEffect(() => {
@@ -317,6 +334,12 @@ export default function ConfigPage() {
     return configs[item.dependsOn] === item.dependsValue;
   };
 
+  const sectionFor = (key: string): ConfigSection => {
+    if (SECTION_KEYS.general.includes(key)) return 'general';
+    if (SECTION_KEYS.security.includes(key)) return 'security';
+    return key.startsWith('payment_') ? 'payment' : 'email';
+  };
+
   // 渲染不同类型的配置项
   const renderConfigItem = (item: ConfigItem) => {
     const isChanged = hasChanges && configs[item.key] !== originalConfigs[item.key];
@@ -419,9 +442,14 @@ export default function ConfigPage() {
     );
   }
 
+  const activeConfigItems = CONFIG_ITEMS.filter((item) =>
+    sectionFor(item.key) === activeSection && shouldShowItem(item)
+  );
+  const activeSectionInfo = CONFIG_SECTIONS.find((section) => section.key === activeSection)!;
+
   return (
     
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-4 md:p-6 max-w-6xl mx-auto">
         {/* 页面标题 */}
         <div className="flex items-center gap-3 mb-6">
           <SettingsIcon className="w-8 h-8 text-primary" />
@@ -433,22 +461,38 @@ export default function ConfigPage() {
           </div>
         </div>
 
-        <Card className="mb-4 shadow-md">
+        <div className="mb-4 flex flex-wrap gap-2 border-b border-divider pb-3" role="tablist" aria-label="网站配置分类">
+          {CONFIG_SECTIONS.map((section) => (
+            <Button
+              key={section.key}
+              size="sm"
+              variant={activeSection === section.key ? 'solid' : 'flat'}
+              color={activeSection === section.key ? 'primary' : 'default'}
+              onPress={() => setActiveSection(section.key)}
+              role="tab"
+              aria-selected={activeSection === section.key}
+            >
+              {section.label}
+            </Button>
+          ))}
+        </div>
+
+        {activeSection === 'general' && <Card className="mb-4 shadow-md">
           <CardHeader><div><h2 className="text-lg font-semibold">订阅格式</h2><p className="text-sm text-gray-600 dark:text-gray-400">同一 API token 同时提供两种客户端格式。</p></div></CardHeader>
           <CardBody className="text-sm space-y-1 text-gray-600 dark:text-gray-300">
             <div><b>v2rayN / Base64：</b><code>/api/v1/open_api/sub?token=...</code></div>
             <div><b>Clash Verge / ClashMeta / Mihomo：</b><code>/api/v1/open_api/clash?token=...</code></div>
             <div className="text-xs text-gray-500">两种链接使用同一个 token，格式不同，不能互相替代。</div>
           </CardBody>
-        </Card>
+        </Card>}
 
         <Card className="shadow-md">
           <CardHeader className="pb-4">
             <div className="flex justify-between items-center w-full">
               <div>
-                <h2 className="text-xl font-semibold">基本设置</h2>
+                <h2 className="text-xl font-semibold">{activeSectionInfo.label}</h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  配置网站的基本信息，这些设置会影响网站的显示效果
+                  {activeSectionInfo.description}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -461,7 +505,7 @@ export default function ConfigPage() {
                   isLoading={saving}
                   disabled={!hasChanges}
                 >
-                  {saving ? '保存中...' : '保存配置'}
+                  {saving ? '保存中...' : '保存所有变更'}
                 </Button>
               </div>
             </div>
@@ -470,15 +514,18 @@ export default function ConfigPage() {
           <Divider />
 
           <CardBody className="space-y-6 pt-6">
-            {CONFIG_ITEMS.map((item, index) => {
-              // 检查配置项是否应该显示
-              if (!shouldShowItem(item)) {
-                return null;
-              }
-
-              // 计算是否是最后一个显示的项目（用于决定是否显示分隔线）
-              const remainingItems = CONFIG_ITEMS.slice(index + 1).filter(shouldShowItem);
-              const isLastItem = remainingItems.length === 0;
+            {activeSection === 'security' && (
+              <div className="rounded-md border border-divider bg-default-50 p-3 text-sm text-default-600">
+                邮箱验证码依赖 Redis 与 SMTP。保存后可用右上角“检查 Redis”和“测试 SMTP”验证认证服务。
+              </div>
+            )}
+            {activeSection === 'payment' && (
+              <div className="rounded-md border border-divider bg-default-50 p-3 text-sm text-default-600">
+                先开启支付系统，再启用至少一种支付渠道。密钥只通过管理员私有配置接口读取和保存。
+              </div>
+            )}
+            {activeConfigItems.map((item, index) => {
+              const isLastItem = index === activeConfigItems.length - 1;
 
               return (
                 <div key={item.key} className="space-y-3">

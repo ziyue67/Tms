@@ -50,6 +50,8 @@ export default function MySubPage() {
 
   useEffect(() => {
     load();
+    const refreshTimer = window.setInterval(load, 30_000);
+    return () => window.clearInterval(refreshTimer);
   }, []);
 
   const GB = 1024 * 1024 * 1024;

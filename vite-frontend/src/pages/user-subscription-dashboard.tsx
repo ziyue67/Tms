@@ -17,14 +17,18 @@ const bytes = (value?: number) => {
 export default function UserSubscriptionDashboardPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const load = async () => {
-    setLoading(true);
+  const load = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     const response = await getSubscriptionDashboard();
     if (response.code === 0) setData(response.data || {});
     else toast.error(response.msg || "加载账户套餐失败");
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const refreshTimer = window.setInterval(() => load(false), 30_000);
+    return () => window.clearInterval(refreshTimer);
+  }, []);
   const chart = useMemo(() => (data?.last24Hours || []).map((item: any) => ({
     time: item.time || (item.createdTime ? new Date(item.createdTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-"),
     flow: Number(item.flow || 0),
@@ -33,7 +37,7 @@ export default function UserSubscriptionDashboardPage() {
   const used = Number(data?.usedTrafficBytes || 0);
 
   return <div className="p-4 space-y-4 max-w-6xl">
-    <div className="flex items-center justify-between"><div><h1 className="text-xl font-bold">仪表盘</h1><p className="text-sm text-default-500">账号级套餐额度与近 24 小时用量</p></div><Button size="sm" variant="flat" onPress={load} isLoading={loading}>刷新</Button></div>
+    <div className="flex items-center justify-between"><div><h1 className="text-xl font-bold">仪表盘</h1><p className="text-sm text-default-500">账号级套餐额度与近 24 小时用量</p></div><Button size="sm" variant="flat" onPress={() => load()} isLoading={loading}>刷新</Button></div>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <Card><CardBody><div className="text-xs text-default-500">当前套餐</div><div className="text-lg font-semibold">{data?.planName || "未开通套餐"}</div><div className="text-xs text-default-500">{data?.validityUnit === "permanent" ? "永久" : data?.validityValue ? `${data.validityValue}${data.validityUnit === "year" ? " 年" : " 个月"}` : "-"}</div></CardBody></Card>
       <Card><CardBody><div className="text-xs text-default-500">套餐总流量</div><div className="text-lg font-semibold">{data?.planName ? (total ? bytes(total) : "不限") : "未开通套餐"}</div></CardBody></Card>
