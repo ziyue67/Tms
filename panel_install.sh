@@ -45,6 +45,35 @@ get_docker_compose_url() {
   fi
 }
 
+# Keep the panel bridge away from the commonly occupied 172.20.0.0/16 range.
+# Older copies of the installer or cached compose files may still contain 172.20;
+# normalize them after every download so `tms update` cannot bring the conflict back.
+normalize_tms_subnet() {
+  [ -f docker-compose.yml ] || return 1
+  if grep -q '172\.20\.0\.0/16' docker-compose.yml; then
+    sed -i.bak 's/172\.20\.0\.0\/16/172.21.0.0\/16/g' docker-compose.yml
+    rm -f docker-compose.yml.bak
+  fi
+  if ! grep -q '172\.21\.0\.0/16' docker-compose.yml; then
+    echo "错误：TMS Compose 未配置 172.21.0.0/16 网段"
+    return 1
+  fi
+}
+
+# Compose normally removes its named network on `down`. If an older Compose,
+# manual network, or interrupted update left it behind, remove it only when no
+# container is attached; never disconnect another application automatically.
+remove_unused_tms_network() {
+  if ! command -v docker >/dev/null 2>&1 || ! docker network inspect gost-network >/dev/null 2>&1; then return 0; fi
+  local attached
+  attached="$(docker network inspect -f '{{len .Containers}}' gost-network 2>/dev/null || echo 1)"
+  if [ "$attached" = "0" ]; then
+    docker network rm gost-network >/dev/null 2>&1 || true
+  else
+    echo "⚠️ gost-network 仍有 $attached 个容器占用，保留现有网络以避免影响其他服务"
+  fi
+}
+
 # 检查 docker-compose 或 docker compose 命令
 check_docker() {
   # 全自动一键:没装 Docker 就用官方脚本自动装
@@ -408,6 +437,7 @@ install_panel() {
   # -fsSL:404 直接失败而不是把 "Not Found" 写进文件;静默但保留错误提示
   curl -fsSL -o docker-compose.yml "$DOCKER_COMPOSE_URL" || { echo "❌ 下载配置文件失败,请检查网络"; exit 1; }
   grep -q "services:" docker-compose.yml || { echo "❌ 配置文件内容不对(可能下到了错误页),请重试"; exit 1; }
+  normalize_tms_subnet || exit 1
   if [[ ! -f "gost.sql" ]]; then
     curl -fsSL -o gost.sql "$GOST_SQL_URL" || { echo "❌ 下载数据库文件失败,请检查网络"; exit 1; }
     grep -qi "CREATE TABLE" gost.sql || { echo "❌ 数据库文件内容不对,请重试"; exit 1; }
@@ -504,6 +534,7 @@ update_panel() {
   # 冲成垃圾,面板当场起不来、还回不去(踩过)。
   if curl -fsSL -o docker-compose.yml.new "$DOCKER_COMPOSE_URL" && grep -q "services:" docker-compose.yml.new; then
     mv -f docker-compose.yml.new docker-compose.yml
+    normalize_tms_subnet || { echo "      ✘ 网段校正失败,停止更新以保护现有服务"; return 1; }
     echo "      ✔ 配置文件已更新"
   else
     rm -f docker-compose.yml.new
@@ -518,6 +549,7 @@ update_panel() {
 
   echo "🛑 停止当前服务..."
   $DOCKER_CMD down
+  remove_unused_tms_network
 
   echo "⬇️ 拉取最新镜像..."
   $DOCKER_CMD pull
