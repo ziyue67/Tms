@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS `redeem_code` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `plan_id` bigint NOT NULL,
   `code_hash` char(64) NOT NULL,
+  `code_value` varchar(64) DEFAULT NULL,
   `code_preview` varchar(20) NOT NULL,
   `batch_id` varchar(64) DEFAULT NULL,
   `status` tinyint NOT NULL DEFAULT 1,

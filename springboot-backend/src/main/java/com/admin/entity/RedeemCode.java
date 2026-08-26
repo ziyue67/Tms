@@ -13,6 +13,8 @@ public class RedeemCode {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long planId;
     private String codeHash;
+    /** The original code is restricted to the administrator-only redemption-code API. */
+    private String codeValue;
     private String codePreview;
     private String batchId;
     private Integer status;

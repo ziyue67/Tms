@@ -78,7 +78,9 @@ public class SchemaMigration implements ApplicationRunner {
         createTable(c, d, "user_subscription", "(" +
                 "id " + id + ", user_id BIGINT NOT NULL, plan_id BIGINT NOT NULL, starts_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, traffic_limit_bytes BIGINT NOT NULL DEFAULT 0, traffic_used_bytes BIGINT NOT NULL DEFAULT 0, next_reset_at BIGINT NULL, max_forwards INTEGER NOT NULL DEFAULT 0, used_forwards INTEGER NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (user_id))");
         createTable(c, d, "redeem_code", "(" +
-                "id " + id + ", plan_id BIGINT NOT NULL, code_hash VARCHAR(64) NOT NULL, code_preview VARCHAR(20) NOT NULL, batch_id VARCHAR(64) NULL, status INTEGER NOT NULL DEFAULT 1, used_by BIGINT NULL, used_time BIGINT NULL, expires_at BIGINT NULL, remark VARCHAR(255) NULL, created_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (code_hash))");
+                "id " + id + ", plan_id BIGINT NOT NULL, code_hash VARCHAR(64) NOT NULL, code_value VARCHAR(64) NULL, code_preview VARCHAR(20) NOT NULL, batch_id VARCHAR(64) NULL, status INTEGER NOT NULL DEFAULT 1, used_by BIGINT NULL, used_time BIGINT NULL, expires_at BIGINT NULL, remark VARCHAR(255) NULL, created_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (code_hash))");
+        // Existing records only stored a one-way hash, so their original values cannot be restored.
+        addColumn(c, d, "redeem_code", "code_value", "VARCHAR(64) NULL");
         createTable(c, d, "quota_usage_log", "(" +
                 "id " + id + ", user_id BIGINT NOT NULL, subscription_id BIGINT NULL, event_type VARCHAR(32) NOT NULL, amount BIGINT NOT NULL DEFAULT 0, metadata " + d.jsonType() + " NULL, created_time BIGINT NOT NULL, PRIMARY KEY (id))");
         createTable(c, d, "payment_order", "(" +

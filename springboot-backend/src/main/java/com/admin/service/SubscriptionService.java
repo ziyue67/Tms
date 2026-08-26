@@ -191,7 +191,7 @@ public class SubscriptionService {
     @Transactional
     public String generateCode(long planId, String batch, Long expiresAt) {
         String raw = randomCode();
-        RedeemCode item = new RedeemCode(); item.setPlanId(planId); item.setCodeHash(sha256(raw)); item.setCodePreview(raw.substring(0, 4) + "****");
+        RedeemCode item = new RedeemCode(); item.setPlanId(planId); item.setCodeHash(sha256(raw)); item.setCodeValue(raw); item.setCodePreview(raw.substring(0, 4) + "****");
         item.setBatchId(batch); item.setStatus(1); item.setExpiresAt(expiresAt); item.setCreatedTime(System.currentTimeMillis()); codes.insert(item);
         return raw;
     }
