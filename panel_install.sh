@@ -529,6 +529,38 @@ EOF
   return 0
 }
 
+external_database_configured() {
+  local db_url="${DB_URL:-}"
+  if [ -z "$db_url" ] && [ -f .env ]; then
+    db_url="$(sed -n 's/^DB_URL=//p' .env | tail -n 1)"
+  fi
+  [ -n "$db_url" ]
+}
+
+external_redis_configured() {
+  local redis_url="${REDIS_URL:-}"
+  if [ -z "$redis_url" ] && [ -f .env ]; then
+    redis_url="$(sed -n 's/^REDIS_URL=//p' .env | tail -n 1)"
+  fi
+  [ -n "$redis_url" ]
+}
+
+# Pass explicit service names so disabled profile services are never fetched.
+pull_panel_images() {
+  local -a services=(backend frontend)
+  if external_database_configured; then
+    echo "      ℹ 外部数据库: 跳过 MySQL 镜像"
+  else
+    services+=(mysql)
+  fi
+  if external_redis_configured; then
+    echo "      ℹ 外部 Redis: 跳过 Redis 镜像"
+  else
+    services+=(redis)
+  fi
+  $DOCKER_CMD pull "${services[@]}"
+}
+
 # 安装功能
 install_panel() {
   echo "🚀 开始安装面板..."
@@ -580,7 +612,7 @@ EOF
 
   echo "[3/4] 拉取镜像并启动服务(首次约 1-3 分钟,请耐心等待)..."
   # 进度条太吵会把最后的访问信息刷走,这里只留结果;失败时再把日志打出来
-  if ! $DOCKER_CMD pull >/tmp/tms_pull.log 2>&1; then
+  if ! pull_panel_images >/tmp/tms_pull.log 2>&1; then
     echo "      ✘ 拉取镜像失败,以下是错误信息:"
     tail -30 /tmp/tms_pull.log
     exit 1
@@ -590,12 +622,14 @@ EOF
     tail -30 /tmp/tms_up.log
     exit 1
   fi
-  echo "      ✔ 三个容器已启动"
+  echo "      ✔ 所需容器已启动"
 
   # 自动写入「面板后端地址」(转发机对接要用),省得登录后再手动到网站配置里填
   echo "[4/4] 检测公网IP并配置面板后端地址..."
   PUBLIC_IP=$(curl -s --max-time 8 https://api.ipify.org || curl -s --max-time 8 https://ipinfo.io/ip || echo "")
-  if [ -n "$PUBLIC_IP" ]; then
+  if external_database_configured; then
+    echo "      ℹ 使用外部数据库，跳过本地 MySQL 写入；请在「网站配置」填写后端地址 ${PUBLIC_IP:-服务器IP}:${BACKEND_PORT}"
+  elif [ -n "$PUBLIC_IP" ]; then
     for i in $(seq 1 30); do
       if docker exec gost-mysql mysqladmin ping -h localhost --silent >/dev/null 2>&1; then
         if docker exec gost-mysql mysql -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
@@ -667,7 +701,7 @@ update_panel() {
   remove_unused_tms_network
 
   echo "⬇️ 拉取最新镜像..."
-  $DOCKER_CMD pull
+  pull_panel_images
 
   echo "🚀 启动更新后的服务..."
   $DOCKER_CMD up -d
@@ -705,6 +739,13 @@ update_panel() {
     fi
     sleep 1
   done
+
+  if external_database_configured; then
+    echo "ℹ 使用外部数据库：未拉取或启动 gost-mysql，跳过 MySQL 容器检查与 MySQL 专用迁移。"
+    echo "   后端已执行通用的 MySQL/PostgreSQL SchemaMigration；初次部署请先导入仓库提供的对应基础 SQL。"
+    echo "✅ 更新完成"
+    return 0
+  fi
 
   # 检查数据库容器健康状态
   echo "🔍 检查数据库服务状态..."

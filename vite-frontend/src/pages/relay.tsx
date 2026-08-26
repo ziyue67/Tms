@@ -110,6 +110,8 @@ export default function RelayPage() {
   const protoLabel = (p: string) =>
     (({ vless: "VLESS-Reality", trojan: "Trojan-Reality", vmess: "VMess", shadowsocks: "Shadowsocks-2022", hysteria2: "Hysteria2", tuic: "TUIC", anytls: "AnyTLS" } as any)[p] || p);
   const landingById = (id: any) => landings.find((l) => l.id === id);
+  const lineName = (nodeName?: string, landingName?: string) =>
+    [nodeName, landingName].map((name) => String(name || "").trim()).filter(Boolean).join(" · ");
 
   const handleTest = async () => {
     if (!buildForm.nodeId) return toast.error("先选前置机(要经它测落地)");
@@ -189,7 +191,7 @@ export default function RelayPage() {
   };
 
   const handleProvisionSubscribedUsers = async (nodeId: number, landingId: number, nodeName: string, landingName: string) => {
-    if (!window.confirm(`将「${nodeName} → ${landingName}」分配给所有已开通套餐的普通用户？每个用户会获得独立凭据，流量会计入各自套餐。`)) return;
+    if (!window.confirm(`将「${lineName(nodeName, landingName)}」分配给所有已开通套餐的普通用户？每个用户会获得独立凭据，流量会计入各自套餐。`)) return;
     const key = `${nodeId}-${landingId}`;
     setGlobalProvisioning(key);
     try {
@@ -229,7 +231,6 @@ export default function RelayPage() {
   const handleRename = async () => {
     const nodeName = String(renameForm.nodeName || "").trim();
     const landingName = String(renameForm.landingName || "").trim();
-    if (!nodeName) return toast.error("前置机名称不能为空");
     if (!landingName) return toast.error("落地名称不能为空");
     const changes: Promise<any>[] = [];
     if (nodeName !== renameForm.originalNodeName) changes.push(renameNode(renameForm.nodeId, nodeName));
@@ -258,7 +259,7 @@ export default function RelayPage() {
   };
 
   const handleClearNode = async (nodeId: number, nodeName: string, landingId: any, landingName: string) => {
-    if (!window.confirm(`确定清空「${nodeName} → ${landingName}」这条中转?(连带其转发/用户;直连和其它落地不受影响)`)) return;
+    if (!window.confirm(`确定清空「${lineName(nodeName, landingName)}」这条中转?(连带其转发/用户;直连和其它落地不受影响)`)) return;
     const res = await deleteInboundsByNode(nodeId, true, landingId);
     if (res.code === 0) {
       toast.success("已清空该条中转");
@@ -304,19 +305,20 @@ export default function RelayPage() {
           const n = ln.node;
           const l = landingById(ln.landingId);
           const landingName = l ? `${l.name}(${l.type})` : `落地#${ln.landingId}`;
+          const displayName = lineName(n.name, landingName) || `中转#${ln.landingId}`;
           const online = n.status === 1;
           const firstIp = n.ip ? String(n.ip).split(",")[0].trim() : (n.serverIp || "");
           return (
             <Card key={`${n.id}-${ln.landingId}`}>
               <CardBody className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-semibold truncate">🖥️ {n.name}</span>
+                  <span className="text-lg font-semibold truncate">🖥️ {displayName}</span>
                   <Chip size="sm" variant="flat" color={online ? "success" : "default"}>{online ? "在线" : "离线"}</Chip>
                   <Chip size="sm" variant="flat" color="primary" className="ml-auto">{ln.inbounds.length} 协议</Chip>
                 </div>
                 {firstIp && <div className="text-xs text-default-500 font-mono">前置机 {firstIp}</div>}
                 <div className="flex flex-wrap items-center gap-1 text-xs">
-                  <span className="text-default-500">落地 →</span>
+                  <span className="text-default-500">落地</span>
                   <Chip size="sm" variant="flat" color="warning">{landingName}</Chip>
                 </div>
                 <div className="flex flex-wrap gap-1">
@@ -347,7 +349,7 @@ export default function RelayPage() {
                     color="success"
                     variant="flat"
                     isLoading={selfLoading === `${n.id}-${ln.landingId}`}
-                    onPress={() => handleAssignSelf(n.id, ln.landingId, `${n.name} → ${landingName}`)}
+                    onPress={() => handleAssignSelf(n.id, ln.landingId, displayName)}
                   >
                     🔑 我自己用
                   </Button>
@@ -414,7 +416,7 @@ export default function RelayPage() {
           <ModalBody className="space-y-3">
             <div className="text-sm text-default-500">只修改面板与订阅中的显示名称，不会改变节点地址、端口、落地配置或已分配用户。</div>
             <Input
-              label="前置机名称"
+              label="前置机名称（可留空）"
               value={renameForm.nodeName}
               onChange={(e) => setRenameForm({ ...renameForm, nodeName: e.target.value })}
             />
@@ -434,7 +436,7 @@ export default function RelayPage() {
       {/* 分配用户(复用协议管理的整机分配) */}
       <Modal isOpen={assignOpen} onClose={() => setAssignOpen(false)}>
         <ModalContent>
-          <ModalHeader>👤 中转分配「{assignForm.nodeName} → {assignForm.landingName}」</ModalHeader>
+          <ModalHeader>👤 中转分配「{lineName(assignForm.nodeName, assignForm.landingName)}」</ModalHeader>
           <ModalBody className="space-y-3">
             <div className="text-sm text-default-500">
               把这条中转的 <b>{assignForm.protocolCount} 个协议</b> 一次分给车友,出口走 {assignForm.landingName}。分配完到「用户管理」拿这条中转订阅链接。

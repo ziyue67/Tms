@@ -190,9 +190,6 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             return R.err(ERROR_NODE_NOT_FOUND);
         }
         String normalizedName = name == null ? "" : name.trim();
-        if (normalizedName.isEmpty()) {
-            return R.err("节点名称不能为空");
-        }
         node.setName(normalizedName);
         node.setUpdatedTime(System.currentTimeMillis());
         return this.updateById(node) ? R.ok() : R.err(ERROR_UPDATE_MSG);
