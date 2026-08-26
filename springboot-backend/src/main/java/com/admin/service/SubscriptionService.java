@@ -59,6 +59,14 @@ public class SubscriptionService {
         return enrich(subscriptions.selectOne(new QueryWrapper<UserSubscription>().eq("user_id", userId).orderByDesc("id").last("limit 1")));
     }
 
+    /** Subscription links must stop advertising an account once its quota or expiry is reached. */
+    public boolean isSubscriptionUsable(long userId) {
+        UserSubscription item = latest(userId);
+        if (item == null) return true;
+        if (item.getStatus() != null && item.getStatus() != 1) return false;
+        return quotaLimitError(userId) == null;
+    }
+
     private UserSubscription enrich(UserSubscription item) {
         if (item == null || item.getPlanId() == null) return item;
         SubscriptionPlan plan = plans.selectById(item.getPlanId());

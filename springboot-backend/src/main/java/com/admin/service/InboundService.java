@@ -50,6 +50,9 @@ public interface InboundService extends IService<Inbound> {
     /** Clash / Mihomo 订阅(YAML)。和 buildSubscription 同源,只是格式不同 */
     String buildClashSubscription(String token);
 
+    /** 返回 v2rayN/Clash 通用的 subscription-userinfo 流量头。 */
+    String getSubscriptionUserInfo(String token);
+
     /** 给协议改显示名(写 Inbound.remark);订阅链接按需生成,改完车友刷新订阅即见新名 */
     R renameInbound(Long id, String remark);
 

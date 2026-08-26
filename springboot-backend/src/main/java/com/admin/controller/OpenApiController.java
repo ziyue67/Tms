@@ -30,7 +30,8 @@ public class OpenApiController extends BaseController {
 
     /** 订阅:按 token 返回该用户所有协议链接的 base64(客户端订阅用,免登录) */
     @GetMapping("/sub")
-    public String sub(@RequestParam("token") String token) {
+    public String sub(@RequestParam("token") String token, HttpServletResponse response) {
+        prepareSubscriptionResponse(response, token);
         return inboundService.buildSubscription(token);
     }
 
@@ -40,8 +41,16 @@ public class OpenApiController extends BaseController {
      * 3x-ui 和 s-ui 也都是独立路径。
      */
     @GetMapping(value = "/clash", produces = "text/yaml; charset=utf-8")
-    public String clash(@RequestParam("token") String token) {
+    public String clash(@RequestParam("token") String token, HttpServletResponse response) {
+        prepareSubscriptionResponse(response, token);
         return inboundService.buildClashSubscription(token);
+    }
+
+    private void prepareSubscriptionResponse(HttpServletResponse response, String token) {
+        response.setHeader("subscription-userinfo", inboundService.getSubscriptionUserInfo(token));
+        response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        response.setHeader("Pragma", "no-cache");
+        response.setDateHeader("Expires", 0L);
     }
 
     @LogAnnotation

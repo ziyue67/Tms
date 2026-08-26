@@ -15,6 +15,7 @@ import com.admin.entity.InboundUser;
 import com.admin.entity.Node;
 import com.admin.entity.Tunnel;
 import com.admin.entity.User;
+import com.admin.entity.UserSubscription;
 import com.admin.entity.CustomNode;
 import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.InboundMapper;
@@ -25,6 +26,7 @@ import com.admin.mapper.UserMapper;
 import com.admin.service.ForwardService;
 import com.admin.service.InboundService;
 import com.admin.service.SpeedLimitService;
+import com.admin.service.SubscriptionService;
 import com.admin.service.TunnelService;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -77,6 +79,8 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
     private com.admin.service.LandingService landingService;
     @Autowired
     private com.admin.service.CustomNodeService customNodeService;
+    @Autowired
+    private SubscriptionService subscriptionService;
 
     @Override
     public R createInbound(InboundDto dto) {
@@ -615,10 +619,12 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
      * 2. 停用的线路直接不出现在订阅里,而不是留着让人连不上 —— 车友更新订阅
      *    发现少了一组,配合前缀能立刻知道是哪条到期/跑满了。
      *
-     * 不返回 subscription-userinfo 流量头:多条线路各有各的配额,只能报一组数字,
-     * 报哪条都是误导。用量按线路看面板的「我的订阅」,那里是准的。
+     * 账号套餐是所有线路共享的,因此聚合订阅可以安全返回账号级 subscription-userinfo。
      */
     private String buildAggregateSubscription(User u) {
+        if (!subscriptionService.isSubscriptionUsable(u.getId())) {
+            return emptyBase64Subscription();
+        }
         List<InboundUser> ius = inboundUserMapper.selectList(
                 new QueryWrapper<InboundUser>().eq("user_id", u.getId()));
         List<String> links = new java.util.ArrayList<>();
@@ -708,6 +714,10 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         } else {
             ius = inboundUserMapper.selectList(new QueryWrapper<InboundUser>().eq("sub_token", token));
         }
+        Long subscriptionUserId = aggUser != null ? aggUser.getId() : (ius.isEmpty() ? null : ius.get(0).getUserId());
+        if (subscriptionUserId != null && !subscriptionService.isSubscriptionUsable(subscriptionUserId)) {
+            return emptyClashSubscription();
+        }
 
         List<java.util.Map<String, Object>> proxies = new java.util.ArrayList<>();
         java.util.Set<String> usedNames = ClashUtil.newNameSet();
@@ -785,7 +795,7 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
                 proxies.add(proxy);
             }
         }
-        Long customOwnerId = aggUser != null ? aggUser.getId() : (ius.isEmpty() ? null : ius.get(0).getUserId());
+        Long customOwnerId = subscriptionUserId;
         if (customOwnerId != null) {
             for (CustomNode custom : customNodeService.activeForUser(customOwnerId)) {
                 java.util.Map<String, Object> proxy = customNodeService.clashProxy(custom, usedNames);
@@ -795,12 +805,7 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         if (proxies.isEmpty()) {
             // 空 proxies 的配置 Mihomo 会直接报错。给一条 DIRECT 占位,
             // 至少订阅能导进去,车友看到的是「没有节点」而不是「订阅损坏」。
-            StringBuilder empty = new StringBuilder();
-            empty.append("proxies: []").append(System.lineSeparator());
-            empty.append("proxy-groups: []").append(System.lineSeparator());
-            empty.append("rules:").append(System.lineSeparator());
-            empty.append("  - MATCH,DIRECT").append(System.lineSeparator());
-            return empty.toString();
+            return emptyClashSubscription();
         }
         return ClashUtil.buildConfig(proxies);
     }
@@ -889,6 +894,9 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         }
         List<InboundUser> ius = inboundUserMapper.selectList(
                 new QueryWrapper<InboundUser>().eq("sub_token", token));
+        if (!ius.isEmpty() && !subscriptionService.isSubscriptionUsable(ius.get(0).getUserId())) {
+            return emptyBase64Subscription();
+        }
         List<String> links = new java.util.ArrayList<>();
         // 线路停用状态查一次缓存起来:一条订阅里六个协议同属一条线路,
         // 挨个去查线路表纯属浪费。
@@ -927,6 +935,43 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         }
         String joined = String.join("\n", links);
         return java.util.Base64.getEncoder().encodeToString(joined.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public String getSubscriptionUserInfo(String token) {
+        User user = userMapper.selectOne(new QueryWrapper<User>().eq("all_sub_token", token).last("limit 1"));
+        if (user == null) {
+            InboundUser line = inboundUserMapper.selectOne(new QueryWrapper<InboundUser>().eq("sub_token", token).last("limit 1"));
+            if (line != null && line.getUserId() != null) user = userMapper.selectById(line.getUserId());
+        }
+        if (user == null) return subscriptionHeader(0L, 0L, 0L, 0L);
+        UserSubscription item = subscriptionService.latest(user.getId());
+        if (item != null) {
+            long used = item.getTrafficUsedBytes() == null ? 0L : Math.max(0L, item.getTrafficUsedBytes());
+            long total = item.getTrafficLimitBytes() == null ? 0L : Math.max(0L, item.getTrafficLimitBytes());
+            long expire = item.getExpiresAt() == null || item.getExpiresAt() <= 0 ? 0L : item.getExpiresAt() / 1000L;
+            return subscriptionHeader(0L, used, total, expire);
+        }
+        long upload = user.getOutFlow() == null ? 0L : Math.max(0L, user.getOutFlow());
+        long download = user.getInFlow() == null ? 0L : Math.max(0L, user.getInFlow());
+        long total = user.getFlow() == null ? 0L : Math.max(0L, user.getFlow()) * 1024L * 1024L * 1024L;
+        long expire = user.getExpTime() == null || user.getExpTime() <= 0 ? 0L : user.getExpTime() / 1000L;
+        return subscriptionHeader(upload, download, total, expire);
+    }
+
+    private String subscriptionHeader(long upload, long download, long total, long expire) {
+        return String.format("upload=%d; download=%d; total=%d; expire=%d", upload, download, total, expire);
+    }
+
+    private String emptyBase64Subscription() {
+        return java.util.Base64.getEncoder().encodeToString(new byte[0]);
+    }
+
+    private String emptyClashSubscription() {
+        return "proxies: []" + System.lineSeparator()
+                + "proxy-groups: []" + System.lineSeparator()
+                + "rules:" + System.lineSeparator()
+                + "  - MATCH,DIRECT" + System.lineSeparator();
     }
 
     @Override
