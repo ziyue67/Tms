@@ -241,8 +241,12 @@ public class SubscriptionService {
     private void audit(UserSubscription subscription, String eventType, long amount, String metadata) {
         if (subscription == null || subscription.getUserId() == null) return;
         QuotaUsageLog log = new QuotaUsageLog();
-        log.setUserId(subscription.getUserId()); log.setSubscriptionId(subscription.getId()); log.setEventType(eventType); log.setAmount(amount); log.setMetadata(metadata); log.setCreatedTime(System.currentTimeMillis());
+        log.setUserId(subscription.getUserId()); log.setSubscriptionId(subscription.getId()); log.setEventType(eventType); log.setAmount(amount); log.setMetadata(jsonMetadata(metadata)); log.setCreatedTime(System.currentTimeMillis());
         quotaLogs.insert(log);
+    }
+    private String jsonMetadata(String value) {
+        if (value == null) return null;
+        return "{\"detail\":\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\"}";
     }
     private String randomCode() { String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; StringBuilder b = new StringBuilder(); for (int i=0;i<20;i++) { if (i>0 && i%5==0) b.append('-'); b.append(alphabet.charAt(random.nextInt(alphabet.length()))); } return b.toString(); }
     private String sha256(String value) { try { byte[] d=MessageDigest.getInstance("SHA-256").digest(value.trim().toUpperCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8)); StringBuilder b=new StringBuilder(); for(byte x:d)b.append(String.format("%02x",x)); return b.toString(); } catch(Exception e){ throw new IllegalStateException(e); } }
