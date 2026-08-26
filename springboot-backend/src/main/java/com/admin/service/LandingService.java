@@ -19,6 +19,9 @@ public interface LandingService extends IService<Landing> {
     /** 落地列表 */
     R getLandings();
 
+    /** 仅修改落地展示名称，不重新解析或下发出站配置。 */
+    R renameLanding(Long id, String name);
+
     /** 删除落地(被中转入站引用时拒绝) */
     R deleteLanding(Long id);
 

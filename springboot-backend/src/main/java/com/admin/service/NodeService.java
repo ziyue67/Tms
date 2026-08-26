@@ -22,6 +22,9 @@ public interface NodeService extends IService<Node> {
 
     R updateNode(NodeUpdateDto nodeUpdateDto);
 
+    /** 仅修改节点展示名称，不影响端口、密钥或节点连接配置。 */
+    R renameNode(Long id, String name);
+
     R deleteNode(Long id);
 
     Node getNodeById(Long id);

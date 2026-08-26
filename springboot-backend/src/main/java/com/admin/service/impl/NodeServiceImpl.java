@@ -180,6 +180,24 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         return result ? R.ok(SUCCESS_UPDATE_MSG) : R.err(ERROR_UPDATE_MSG);
     }
 
+    @Override
+    public R renameNode(Long id, String name) {
+        if (id == null) {
+            return R.err("参数不全");
+        }
+        Node node = this.getById(id);
+        if (node == null) {
+            return R.err(ERROR_NODE_NOT_FOUND);
+        }
+        String normalizedName = name == null ? "" : name.trim();
+        if (normalizedName.isEmpty()) {
+            return R.err("节点名称不能为空");
+        }
+        node.setName(normalizedName);
+        node.setUpdatedTime(System.currentTimeMillis());
+        return this.updateById(node) ? R.ok() : R.err(ERROR_UPDATE_MSG);
+    }
+
     /**
      * 删除节点
      * 删除前会检查是否有隧道正在使用该节点

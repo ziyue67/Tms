@@ -69,6 +69,7 @@ export const getUserPackageInfo = () => Network.post("/user/package");
 export const createNode = (data: any) => Network.post("/node/create", data);
 export const getNodeList = () => Network.post("/node/list");
 export const updateNode = (data: any) => Network.post("/node/update", data);
+export const renameNode = (id: number, name: string) => Network.post("/node/rename", { id, name });
 export const deleteNode = (id: number) => Network.post("/node/delete", { id });
 export const getNodeInstallCommand = (id: number) => Network.post("/node/install", { id });
 export const checkNodeStatus = (nodeId?: number) => {
@@ -123,6 +124,8 @@ export const deleteInboundsByNode = (nodeId: number, relay?: boolean, landingId?
 export const assignInboundUser = (data: any) => Network.post("/inbound/assign", data);
 export const assignAllToUser = (data: any) => Network.post("/inbound/assign-all", data);
 export const provisionSubscribedUsers = (nodeId: number) => Network.post("/inbound/provision-subscribed-users", { nodeId });
+export const provisionSubscribedUsersRelay = (nodeId: number, landingId: number) =>
+  Network.post("/inbound/provision-subscribed-users-relay", { nodeId, landingId });
 // 「我自己用」:把这台机器/这条中转的协议开给当前登录的管理员自己(不限速/不限量/不到期)
 export const assignSelf = (data: any) => Network.post("/inbound/assign-self", data);
 export const unassignInboundUser = (id: number) => Network.post("/inbound/unassign", { id });
@@ -138,6 +141,7 @@ export const getUserSub = (userId: number) => Network.post("/inbound/user-sub", 
 export const oneClickRelay = (nodeId: number, link: string, name?: string, sni?: string) => Network.post("/inbound/one-click-relay", { nodeId, link, name, sni });
 export const testLanding = (nodeId: number, link: string) => Network.post("/landing/test", { nodeId, link });
 export const getLandingList = () => Network.post("/landing/list"); // 仅用于中转卡片显示落地名
+export const renameLanding = (id: number, name: string) => Network.post("/landing/rename", { id, name });
 
 // 订阅按线路(车友×机器):一个车友的所有订阅线路
 export const getUserLines = (userId: number) => Network.post("/inbound/user-lines", { userId });

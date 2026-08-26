@@ -42,6 +42,15 @@ public class LandingController extends BaseController {
 
     @LogAnnotation
     @RequireRole
+    @PostMapping("/rename")
+    public R rename(@RequestBody Map<String, Object> body) {
+        Object id = body.get("id");
+        return landingService.renameLanding(id == null ? null : Long.valueOf(String.valueOf(id)),
+                body.get("name") == null ? "" : String.valueOf(body.get("name")));
+    }
+
+    @LogAnnotation
+    @RequireRole
     @PostMapping("/delete")
     public R delete(@RequestBody Map<String, Object> body) {
         return landingService.deleteLanding(Long.valueOf(String.valueOf(body.get("id"))));

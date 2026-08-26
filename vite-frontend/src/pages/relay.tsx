@@ -16,10 +16,13 @@ import {
   deleteInboundsByNode,
   assignAllToUser,
   assignSelf,
+  provisionSubscribedUsersRelay,
   getNodeList,
   getAllUsers,
   getSpeedLimitList,
   getLandingList,
+  renameNode,
+  renameLanding,
 } from "@/api";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { SNI_PRESETS, DEFAULT_SNI, cleanSni } from "@/config/sni";
@@ -46,6 +49,11 @@ export default function RelayPage() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignForm, setAssignForm] = useState<any>({ nodeId: null, nodeName: "", protocolCount: 0, userId: null, speedId: null, expDate: null, flowGb: null });
   const [assignLoading, setAssignLoading] = useState(false);
+  const [globalProvisioning, setGlobalProvisioning] = useState<string | null>(null);
+
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameForm, setRenameForm] = useState<any>({ nodeId: null, landingId: null, nodeName: "", landingName: "", originalNodeName: "", originalLandingName: "" });
+  const [renameLoading, setRenameLoading] = useState(false);
 
   // 「我自己用」:一键把这条中转开给当前管理员自己,完事直接弹订阅链接
   const [selfLoading, setSelfLoading] = useState<string | null>(null);
@@ -180,6 +188,75 @@ export default function RelayPage() {
     setAssignLoading(false);
   };
 
+  const handleProvisionSubscribedUsers = async (nodeId: number, landingId: number, nodeName: string, landingName: string) => {
+    if (!window.confirm(`将「${nodeName} → ${landingName}」分配给所有已开通套餐的普通用户？每个用户会获得独立凭据，流量会计入各自套餐。`)) return;
+    const key = `${nodeId}-${landingId}`;
+    setGlobalProvisioning(key);
+    try {
+      const response = await provisionSubscribedUsersRelay(nodeId, landingId);
+      if (response.code !== 0) {
+        toast.error(response.msg || "全局分配失败");
+        return;
+      }
+      const data = response.data || {};
+      const errors = Array.isArray(data.errors) ? data.errors : [];
+      if (errors.length) toast.error(`已开通 ${data.provisionedUsers || 0} 个用户，${errors.length} 个失败`);
+      else toast.success(`已开通 ${data.provisionedUsers || 0} 个套餐用户`);
+      loadAll();
+    } catch (e) {
+      toast.error("全局分配失败");
+    } finally {
+      setGlobalProvisioning(null);
+    }
+  };
+
+  const openRename = (node: any, landing: any) => {
+    if (!landing?.id) {
+      toast.error("落地记录不存在，无法编辑名称");
+      return;
+    }
+    setRenameForm({
+      nodeId: node.id,
+      landingId: landing.id,
+      nodeName: node.name || "",
+      landingName: landing.name || "",
+      originalNodeName: node.name || "",
+      originalLandingName: landing.name || "",
+    });
+    setRenameOpen(true);
+  };
+
+  const handleRename = async () => {
+    const nodeName = String(renameForm.nodeName || "").trim();
+    const landingName = String(renameForm.landingName || "").trim();
+    if (!nodeName) return toast.error("前置机名称不能为空");
+    if (!landingName) return toast.error("落地名称不能为空");
+    const changes: Promise<any>[] = [];
+    if (nodeName !== renameForm.originalNodeName) changes.push(renameNode(renameForm.nodeId, nodeName));
+    if (landingName !== renameForm.originalLandingName) changes.push(renameLanding(renameForm.landingId, landingName));
+    if (changes.length === 0) {
+      setRenameOpen(false);
+      return;
+    }
+    setRenameLoading(true);
+    try {
+      const results = await Promise.all(changes);
+      const failed = results.find((result) => result.code !== 0);
+      if (failed) {
+        toast.error(failed.msg || "名称更新失败");
+      } else {
+        toast.success("节点名称已更新");
+        setRenameOpen(false);
+      }
+      loadAll();
+    } catch (e) {
+      toast.error("名称更新失败");
+      loadAll();
+    } finally {
+      setRenameLoading(false);
+    }
+  };
+
   const handleClearNode = async (nodeId: number, nodeName: string, landingId: any, landingName: string) => {
     if (!window.confirm(`确定清空「${nodeName} → ${landingName}」这条中转?(连带其转发/用户;直连和其它落地不受影响)`)) return;
     const res = await deleteInboundsByNode(nodeId, true, landingId);
@@ -247,9 +324,22 @@ export default function RelayPage() {
                     <Chip key={ib.id} size="sm" variant="flat" color="secondary">{protoLabel(ib.protocol)}</Chip>
                   ))}
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" color="primary" className="flex-1" onPress={() => openNodeAssign(n, ln.landingId, landingName, ln.inbounds.length)}>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" color="primary" className="flex-1 min-w-[7rem]" onPress={() => openNodeAssign(n, ln.landingId, landingName, ln.inbounds.length)}>
                     👤 分配用户
+                  </Button>
+                  <Button
+                    size="sm"
+                    color="secondary"
+                    variant="flat"
+                    className="min-w-[10rem]"
+                    isLoading={globalProvisioning === `${n.id}-${ln.landingId}`}
+                    onPress={() => handleProvisionSubscribedUsers(n.id, ln.landingId, n.name, landingName)}
+                  >
+                    全局分配套餐用户
+                  </Button>
+                  <Button size="sm" variant="flat" onPress={() => openRename(n, l)}>
+                    编辑名称
                   </Button>
                   {/* 自己用不必先建车友:一键开给当前管理员,不限速不限量不到期 */}
                   <Button
@@ -314,6 +404,29 @@ export default function RelayPage() {
             >
               复制订阅链接
             </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={renameOpen} onClose={() => setRenameOpen(false)}>
+        <ModalContent>
+          <ModalHeader>编辑中转节点名称</ModalHeader>
+          <ModalBody className="space-y-3">
+            <div className="text-sm text-default-500">只修改面板与订阅中的显示名称，不会改变节点地址、端口、落地配置或已分配用户。</div>
+            <Input
+              label="前置机名称"
+              value={renameForm.nodeName}
+              onChange={(e) => setRenameForm({ ...renameForm, nodeName: e.target.value })}
+            />
+            <Input
+              label="落地名称"
+              value={renameForm.landingName}
+              onChange={(e) => setRenameForm({ ...renameForm, landingName: e.target.value })}
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={() => setRenameOpen(false)}>取消</Button>
+            <Button color="primary" isLoading={renameLoading} onPress={handleRename}>保存名称</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

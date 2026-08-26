@@ -64,6 +64,24 @@ public class LandingServiceImpl extends ServiceImpl<LandingMapper, Landing> impl
     }
 
     @Override
+    public R renameLanding(Long id, String name) {
+        if (id == null) {
+            return R.err("参数不全");
+        }
+        Landing landing = this.getById(id);
+        if (landing == null) {
+            return R.err("落地不存在");
+        }
+        String normalizedName = name == null ? "" : name.trim();
+        if (normalizedName.isEmpty()) {
+            return R.err("落地名称不能为空");
+        }
+        landing.setName(normalizedName);
+        landing.setUpdatedTime(System.currentTimeMillis());
+        return this.updateById(landing) ? R.ok() : R.err("落地名称更新失败");
+    }
+
+    @Override
     public R deleteLanding(Long id) {
         long used = inboundMapper.selectCount(new QueryWrapper<Inbound>().eq("landing_id", id));
         if (used > 0) {

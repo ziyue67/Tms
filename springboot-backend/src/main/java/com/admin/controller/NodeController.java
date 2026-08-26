@@ -48,6 +48,15 @@ public class NodeController extends BaseController {
 
     @LogAnnotation
     @RequireRole
+    @PostMapping("/rename")
+    public R rename(@RequestBody Map<String, Object> params) {
+        Object id = params.get("id");
+        return nodeService.renameNode(id == null ? null : Long.valueOf(String.valueOf(id)),
+                params.get("name") == null ? "" : String.valueOf(params.get("name")));
+    }
+
+    @LogAnnotation
+    @RequireRole
     @PostMapping("/delete")
     public R delete(@RequestBody Map<String, Object> params) {
         Long id = Long.valueOf(params.get("id").toString());
