@@ -10,6 +10,14 @@ The upstream `LICENSE` and copyright notices remain applicable to the original c
 
 After importing `gost.sql`, apply `springboot-backend/src/main/resources/db/tms-account-commerce.sql`. The application also runs an idempotent JDBC migration at startup: old installations missing `user.email`, `user.all_sub_token`, or any account/commerce table used by the current entities are upgraded automatically for MySQL and PostgreSQL. Keep the SQL file for manual/bootstrap installs and backups. Configure SMTP and payment callback secrets in the administrator's website configuration before enabling registration or payment callbacks.
 
+### Redis and account recovery
+
+Registration verification codes and password-reset credentials use Redis TTL storage (`tms:auth:verify:*`) as the primary temporary store. Only SHA-256/BCrypt hashes are stored; plaintext codes and reset tokens are sent by email and are never written to the database or logs. The `verification_code` table remains an audit/fallback record, so an installation can still complete an existing request during a brief Redis outage. Password recovery follows the sub2api flow: `POST /api/v1/auth/forgot-password` accepts an email, sends a one-time `/reset-password?email=...&token=...` link, and `POST /api/v1/auth/reset-password` consumes that token once. Unknown email addresses receive the same success response to prevent account enumeration.
+
+All Compose variants start a persistent Redis 7 container. Set `REDIS_PASSWORD` to a long random value in `.env` (the compose fallback `change-me-now` is for development only), and set `TMS_RESET_URL_BASE` or `PUBLIC_BASE_URL` to the public frontend URL so links in email point to the deployed panel. External MySQL/PostgreSQL Compose files intentionally keep the database external while still running the Redis service locally.
+
+To use an external Redis instead, set `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DATABASE`, and optionally `REDIS_SSL=true` for the backend. The application uses Spring Data Redis and is compatible with Redis 6/7, managed Redis, and Redis instances outside Docker. Keep the Redis endpoint private and never commit its password.
+
 ### Payment provider configuration
 
 All payment credentials are saved only through the administrator's website configuration and are never exposed by public configuration APIs. Keep each provider disabled until every required field is set.
@@ -68,6 +76,11 @@ export DB_URL='jdbc:mysql://db.example.com:3306/gost?useUnicode=true&useSSL=fals
 export DB_USER='gost'
 export DB_PASSWORD='请使用部署环境的密码'
 export JWT_SECRET='请生成至少32位随机值'
+export REDIS_PASSWORD='请生成随机 Redis 密码'
+export REDIS_HOST='redis.example.com'
+export REDIS_PORT='6379'
+export REDIS_DATABASE='0'
+export TMS_RESET_URL_BASE='https://panel.example.com'
 docker compose -f docker-compose-external-mysql.yml up -d
 
 # 外部 PostgreSQL（先执行 db/tms-postgres.sql）
@@ -75,6 +88,8 @@ export DB_URL='jdbc:postgresql://db.example.com:5432/gost'
 export DB_USER='gost'
 export DB_PASSWORD='请使用部署环境的密码'
 export JWT_SECRET='请生成至少32位随机值'
+export REDIS_PASSWORD='请生成随机 Redis 密码'
+export TMS_RESET_URL_BASE='https://panel.example.com'
 docker compose -f docker-compose-external-postgres.yml up -d
 ```
 

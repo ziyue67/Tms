@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Input } from "@heroui/input";
+import { Input, Textarea } from "@heroui/input";
 import { Spinner } from "@heroui/spinner";
 import { Divider } from "@heroui/divider";
 import { Switch } from "@heroui/switch";
@@ -36,7 +36,7 @@ interface ConfigItem {
   label: string;
   placeholder?: string;
   description?: string;
-  type: 'input' | 'switch' | 'select';
+  type: 'input' | 'textarea' | 'switch' | 'select';
   inputType?: 'text' | 'password';
   options?: { label: string; value: string; description?: string }[];
   dependsOn?: string; // 依赖的配置项key
@@ -110,6 +110,10 @@ const CONFIG_ITEMS: ConfigItem[] = [
   { key: 'smtp_ssl', label: '启用 SMTP SSL', description: '通常用于 465 端口；不要与 STARTTLS 同时启用。', type: 'switch' },
   { key: 'email_code_expire_seconds', label: '邮箱验证码有效期（秒）', placeholder: '600', type: 'input' },
   { key: 'email_code_cooldown_seconds', label: '邮箱验证码发送间隔（秒）', placeholder: '60', type: 'input' },
+  { key: 'email_register_subject', label: '注册验证码邮件主题', placeholder: 'TMS 注册验证码', type: 'input' },
+  { key: 'email_register_template', label: '注册验证码邮件模板', placeholder: '你的验证码是 {{code}}，有效期 {{expires_minutes}} 分钟。', description: '可用变量：{{code}}、{{expires_minutes}}、{{app_name}}。', type: 'textarea' },
+  { key: 'email_reset_subject', label: '密码重置邮件主题', placeholder: 'TMS 密码重置', type: 'input' },
+  { key: 'email_reset_template', label: '密码重置邮件模板', placeholder: '请点击链接：{{reset_url}}，有效期 {{expires_minutes}} 分钟。', description: '可用变量：{{reset_url}}、{{expires_minutes}}、{{app_name}}。', type: 'textarea' },
   { key: 'payment_test_mode', label: '支付测试模式', description: '仅测试环境启用，管理员可手动完成待支付订单。', type: 'switch' },
   { key: 'payment_manual_enabled', label: '启用人工支付', type: 'switch' },
   { key: 'payment_alipay_enabled', label: '启用支付宝', type: 'switch' },
@@ -312,6 +316,23 @@ export default function ConfigPage() {
               input: "text-sm",
               inputWrapper: isChanged 
                 ? "border-warning-300 data-[hover=true]:border-warning-400" 
+                : ""
+            }}
+          />
+        );
+
+      case 'textarea':
+        return (
+          <Textarea
+            minRows={4}
+            value={configs[item.key] || ''}
+            onChange={(e) => handleConfigChange(item.key, e.target.value)}
+            placeholder={item.placeholder}
+            variant="bordered"
+            classNames={{
+              input: "text-sm",
+              inputWrapper: isChanged
+                ? "border-warning-300 data-[hover=true]:border-warning-400"
                 : ""
             }}
           />

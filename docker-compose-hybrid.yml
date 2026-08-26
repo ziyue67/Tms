@@ -8,6 +8,21 @@
 #      (第一次会本地编译前后端,几分钟)
 #   4) 浏览器开 http://测试机IP:${FRONTEND_PORT},默认 admin_user/admin_user
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: tms-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-change-me-now}"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - gost-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD:-change-me-now}' ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   mysql:
     image: mysql:5.7
     container_name: gost-mysql
@@ -50,6 +65,9 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me-now}
       LOG_DIR: /app/logs
       JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
     ports:
@@ -58,6 +76,8 @@ services:
       - backend_logs:/app/logs
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - gost-network
@@ -83,6 +103,9 @@ volumes:
   backend_logs:
     name: backend_logs
     driver: local
+  redis_data:
+    name: tms_redis_data
+    driver: local
 
 networks:
   gost-network:
@@ -94,5 +117,6 @@ networks:
 # DB_USER=gost
 # DB_PASSWORD=换个强密码
 # JWT_SECRET=换一串随机长字符串
+# REDIS_PASSWORD=换一串 Redis 强密码
 # BACKEND_PORT=6365
 # FRONTEND_PORT=6366

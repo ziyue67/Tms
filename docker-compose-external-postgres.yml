@@ -1,4 +1,18 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: tms-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-change-me-now}"]
+    volumes:
+      - redis_data:/data
+    networks: [tms-network]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD:-change-me-now}' ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   backend:
     image: ghcr.io/ziyue67/springboot-backend:latest
     container_name: springboot-backend
@@ -11,12 +25,18 @@ services:
       MYBATIS_TABLE_FORMAT: '"%s"'
       MYBATIS_COLUMN_FORMAT: '"%s"'
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me-now}
       LOG_DIR: /app/logs
       JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
     ports:
       - "${BACKEND_PORT:-6365}:6365"
     volumes:
       - backend_logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
     networks: [tms-network]
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:6365/flow/test || exit 1"]
@@ -39,6 +59,8 @@ services:
 volumes:
   backend_logs:
     name: tms_backend_logs
+  redis_data:
+    name: tms_redis_data
 
 networks:
   tms-network:

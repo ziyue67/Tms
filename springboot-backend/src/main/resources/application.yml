@@ -1,4 +1,13 @@
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      ssl:
+        enabled: ${REDIS_SSL:false}
+      timeout: ${REDIS_TIMEOUT:2s}
   datasource:
     driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
     # Set DB_URL for an external MySQL or PostgreSQL server. The legacy DB_* values remain supported.
@@ -60,6 +69,7 @@ tms:
   auth:
     verification-expire-seconds: ${VERIFY_CODE_EXPIRE_SECONDS:600}
     verification-cooldown-seconds: ${VERIFY_CODE_COOLDOWN_SECONDS:60}
+    reset-url-base: ${TMS_RESET_URL_BASE:${PUBLIC_BASE_URL:http://localhost:6366}}
 
 
 captcha:
