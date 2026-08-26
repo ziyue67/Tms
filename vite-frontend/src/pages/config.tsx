@@ -114,6 +114,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
   { key: 'email_register_template', label: '注册验证码邮件模板', placeholder: '你的验证码是 {{code}}，有效期 {{expires_minutes}} 分钟。', description: '可用变量：{{code}}、{{expires_minutes}}、{{app_name}}。', type: 'textarea' },
   { key: 'email_reset_subject', label: '密码重置邮件主题', placeholder: 'TMS 密码重置', type: 'input' },
   { key: 'email_reset_template', label: '密码重置邮件模板', placeholder: '请点击链接：{{reset_url}}，有效期 {{expires_minutes}} 分钟。', description: '可用变量：{{reset_url}}、{{expires_minutes}}、{{app_name}}。', type: 'textarea' },
+  { key: 'payment_enabled', label: '启用支付系统', description: '关闭后用户不能创建新的购买订单，已存在订单和支付回调仍保留。', type: 'switch' },
   { key: 'payment_test_mode', label: '支付测试模式', description: '仅测试环境启用，管理员可手动完成待支付订单。', type: 'switch' },
   { key: 'payment_manual_enabled', label: '启用人工支付', type: 'switch' },
   { key: 'payment_alipay_enabled', label: '启用支付宝', type: 'switch' },
@@ -199,7 +200,7 @@ export default function ConfigPage() {
       if (response.code !== 0) {
         throw new Error(response.msg || '加载配置失败');
       }
-      const configData = response.data || {};
+      const configData = { payment_enabled: 'true', ...(response.data || {}) };
       
       // 只有在数据有变化时才更新
       const hasDataChanged = JSON.stringify(configData) !== JSON.stringify(configsToCompare);

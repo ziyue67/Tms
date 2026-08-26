@@ -22,6 +22,9 @@ import AdminSubscriptionPage from "@/pages/admin-subscription";
 import UserSubscriptionDashboardPage from "@/pages/user-subscription-dashboard";
 import PurchasePage from "@/pages/purchase";
 import RedeemPage from "@/pages/redeem";
+import MyOrdersPage from "@/pages/my-orders";
+import AdminRedeemCodesPage from "@/pages/admin-redeem-codes";
+import AdminOrdersPage from "@/pages/admin-orders";
 import { SettingsPage } from "@/pages/settings";
 
 import AdminLayout from "@/layouts/admin";
@@ -166,7 +169,10 @@ function App() {
       <Route path="/subscription" element={<ProtectedRoute><Navigate to="/purchase" replace /></ProtectedRoute>} />
       <Route path="/purchase" element={<ProtectedRoute><PurchasePage /></ProtectedRoute>} />
       <Route path="/redeem" element={<ProtectedRoute><RedeemPage /></ProtectedRoute>} />
+      <Route path="/my-orders" element={<ProtectedRoute><MyOrdersPage /></ProtectedRoute>} />
       <Route path="/admin/subscription" element={<ProtectedRoute useSimpleLayout><AdminSubscriptionPage /></ProtectedRoute>} />
+      <Route path="/admin/redeem-codes" element={<ProtectedRoute useSimpleLayout><AdminRedeemCodesPage /></ProtectedRoute>} />
+      <Route path="/admin/orders" element={<ProtectedRoute useSimpleLayout><AdminOrdersPage /></ProtectedRoute>} />
       <Route 
         path="/change-password" 
         element={

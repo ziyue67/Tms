@@ -28,6 +28,7 @@ public class PaymentController {
     }
 
     @GetMapping("/orders/{orderNo}") public R get(@PathVariable String orderNo) { return R.ok(service.get(JwtUtil.getUserIdFromToken(), orderNo)); }
+    @GetMapping("/orders") public R orders() { return R.ok(service.listOrders(JwtUtil.getUserIdFromToken())); }
 
     @PostMapping("/wechat/notify")
     public R wechat(@RequestBody String rawBody, HttpServletRequest request) { return callback("wechat", rawBody, Collections.emptyMap(), request); }

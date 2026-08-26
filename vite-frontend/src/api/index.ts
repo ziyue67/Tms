@@ -47,6 +47,7 @@ export const unassignCustomNode = (nodeId: number, userId: number) => Network.de
 export const deleteCustomNode = (nodeId: number) => Network.delete(`/custom-nodes/${nodeId}`);
 export const getAuthConfig = () => Network.get("/auth/config");
 export const getPaymentOrder = (orderNo: string) => Network.get(`/payment/orders/${orderNo}`);
+export const getMyPaymentOrders = () => Network.get("/payment/orders");
 
 // 用户CRUD操作 - 全部使用POST请求
 export const createUser = (data: any) => Network.post("/user/create", data);

@@ -59,6 +59,7 @@ public class PaymentService {
     }
 
     public PaymentOrder createOrder(long userId, long planId, String provider) {
+        if (!paymentSystemEnabled()) throw new IllegalArgumentException("支付系统已关闭");
         SubscriptionPlan plan = plans.selectById(planId);
         if (plan == null || !Integer.valueOf(1).equals(plan.getStatus()) || !Integer.valueOf(1).equals(plan.getForSale())) throw new IllegalArgumentException("套餐不可购买");
         String channel = provider == null ? "manual" : provider.trim().toLowerCase(Locale.ROOT);
@@ -90,6 +91,7 @@ public class PaymentService {
 
     public List<Map<String, String>> enabledProviders() {
         List<Map<String, String>> result = new ArrayList<>();
+        if (!paymentSystemEnabled()) return result;
         for (String provider : Arrays.asList("alipay", "wechat", "easypay", "stripe", "manual")) {
             if (providerEnabled(provider)) {
                 Map<String, String> item = new LinkedHashMap<>(); item.put("key", provider); item.put("label", providerLabel(provider)); result.add(item);
@@ -134,10 +136,12 @@ public class PaymentService {
     }
 
     public PaymentOrder get(long userId, String orderNo) { return orders.selectOne(new QueryWrapper<PaymentOrder>().eq("user_id", userId).eq("order_no", orderNo).last("limit 1")); }
+    public List<PaymentOrder> listOrders(long userId) { return orders.selectList(new QueryWrapper<PaymentOrder>().eq("user_id", userId).orderByDesc("id")); }
     public List<PaymentOrder> listOrders() { return orders.selectList(new QueryWrapper<PaymentOrder>().orderByDesc("id")); }
     private PaymentOrder find(String orderNo) { PaymentOrder order = orders.selectOne(new QueryWrapper<PaymentOrder>().eq("order_no", orderNo).last("limit 1")); if (order == null) throw new IllegalArgumentException("订单不存在"); return order; }
     private PaymentProviderAdapter adapter(String provider) { PaymentProviderAdapter adapter = adapters.get(provider); if (adapter == null) throw new IllegalArgumentException("不支持的支付方式"); return adapter; }
     private boolean providerEnabled(String provider) { return "manual".equals(provider) ? "true".equalsIgnoreCase(config.get("payment_manual_enabled", "true")) : config.enabled(provider); }
+    private boolean paymentSystemEnabled() { return "true".equalsIgnoreCase(config.get("payment_enabled", "true")); }
     private String providerLabel(String provider) { return Map.of("alipay", "支付宝", "wechat", "微信支付", "easypay", "易支付", "stripe", "Stripe", "manual", "人工支付").get(provider); }
     private String randomSuffix() { return UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase(Locale.ROOT); }
 }
