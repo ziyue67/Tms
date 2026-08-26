@@ -9,7 +9,7 @@
 #   4) 浏览器开 http://测试机IP:${FRONTEND_PORT},默认 admin_user/admin_user
 services:
   redis:
-    image: redis:7-alpine
+    image: ghcr.io/ziyue67/redis:7-alpine
     container_name: tms-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-change-me-now}"]

@@ -219,9 +219,37 @@ jobs:
             $TAGS \
             ./springboot-backend
 
+  build-redis:
+    name: Build & Push Redis Image
+    needs: check-version
+    # Redis is published under this repository too, so deployments can use
+    # one GHCR namespace and do not depend on Docker Hub at runtime.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Redis Docker image
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --push \
+            -t ghcr.io/ziyue67/redis:7-alpine \
+            -t ghcr.io/ziyue67/redis:latest \
+            ./redis
+
   create-release:
     name: Create Release and Tag
-    needs: [check-version, build-gost, build-vite, build-java]
+    needs: [check-version, build-gost, build-vite, build-java, build-redis]
     if: needs.check-version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
