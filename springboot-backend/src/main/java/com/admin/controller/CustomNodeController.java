@@ -36,6 +36,9 @@ public class CustomNodeController {
             CustomNode custom = service.getForMeteredRelay(nodeId);
             R created = inboundService.oneClickRelay(ingressNodeId, custom.getRawLink(), "中转-" + custom.getName(), body.get("sni") == null ? null : String.valueOf(body.get("sni")));
             if (created.getCode() != 0) return created;
+            // The original client-side node has no user identity and bypasses accounting.
+            // Stop publishing it after the metered relay has been created.
+            service.disable(nodeId);
             if (Boolean.parseBoolean(String.valueOf(body.getOrDefault("provisionSubscribedUsers", true)))) {
                 Long landingId = null;
                 if (created.getData() instanceof java.util.List<?> rows && !rows.isEmpty() && rows.get(0) instanceof com.admin.entity.Inbound) {
