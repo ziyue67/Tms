@@ -248,11 +248,8 @@ public class FlowController extends BaseController {
             checkUserRelatedLimits(userId, name);
             checkUserTunnelRelatedLimits(userTunnelId, name, userId);
         } else if (forward != null && forward.getUserId() != null && forward.getUserId() != 0) {
-            // 协议/中转的转发:userTunnelId 恒为 0(没有 user_tunnel),以前整个被跳过 → 配额从未生效。
-            // 改为走【线路】检查:一条线路 = 一个套餐,流量/到期各算各的,超了只停这条。
-            // 注意:这里【不】查账号总流量——协议/中转按线路卖,不存在"账号总额度"这个概念;
-            // 但账号被停用/账号整体到期仍然全停(那是账号级开关)。
-            checkLineRelatedLimits(forward, userId);
+            // 原生协议和中转都由用户套餐统一计费。线路记录只用于组织订阅和人工停用，
+            // 不能再以自己的“不限/永久”配置覆盖套餐的总流量或到期时间。
             checkUserAccountLimits(userId, name);
         }
 
@@ -260,8 +257,7 @@ public class FlowController extends BaseController {
     }
 
     /**
-     * 协议/中转的账号级检查:只看账号是否被停用、账号是否整体到期(那是账号级开关,到了就全停)。
-     * 【不查账号总流量】——协议/中转按线路卖,流量由每条线路自己的配额管。
+     * 协议/中转的唯一计费闸门：账号状态及套餐总流量、套餐到期时间。
      */
     private void checkUserAccountLimits(String userId, String name) {
         User u = userService.getById(userId);
@@ -442,9 +438,12 @@ public class FlowController extends BaseController {
         for (Forward forward : forwardList) {
             Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
             if (tunnel != null){
-                GostUtil.PauseService(tunnel.getInNodeId(), name);
+                // 每条转发都有独立的 GOST 服务名；复用上报线路的名称会漏停其它线路。
+                String serviceName = buildServiceName(String.valueOf(forward.getId()),
+                        String.valueOf(forward.getUserId()), DEFAULT_USER_TUNNEL_ID);
+                GostUtil.PauseService(tunnel.getInNodeId(), serviceName);
                 if (tunnel.getType() == 2){
-                    GostUtil.PauseRemoteService(tunnel.getOutNodeId(), name);
+                    GostUtil.PauseRemoteService(tunnel.getOutNodeId(), serviceName);
                 }
             }
             forward.setStatus(0);

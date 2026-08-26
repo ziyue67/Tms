@@ -17,7 +17,6 @@ export default function MySubPage() {
   const [lines, setLines] = useState<any[]>([]);
   // 「全部线路」聚合订阅:一条链接包含他所有线路,以后新开线路也不用重发
   const [allSubToken, setAllSubToken] = useState<string>("");
-  const [customNodeCount, setCustomNodeCount] = useState(0);
   const [account, setAccount] = useState<any>(null); // 只用来判断账号是否被停用/到期
   const [subscription, setSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -37,7 +36,6 @@ export default function MySubPage() {
         setLines(Array.isArray(d) ? d : (d?.lines || []));
         if (!Array.isArray(d)) {
           if (d?.allSubToken) setAllSubToken(d.allSubToken);
-          setCustomNodeCount(Number(d?.customNodeCount || 0));
         }
       }
       if (pkg.code === 0) setAccount(pkg.data?.userInfo || null);
@@ -81,12 +79,12 @@ export default function MySubPage() {
 
       {subscription?.planName && <Card className="border border-primary/40"><CardBody className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"><div><div className="text-default-500 text-xs">当前套餐</div><b>{subscription.planName}</b></div><div><div className="text-default-500 text-xs">流量</div><b>{subscription.totalTrafficBytes ? `${(Number(subscription.totalTrafficBytes) / GB).toFixed(2)} GB` : "不限"}</b></div><div><div className="text-default-500 text-xs">已使用</div><b>{fmtGB(subscription.usedTrafficBytes)}</b></div><div><div className="text-default-500 text-xs">到期 / 转发</div><b>{subscription.expiresAt === 0 ? "永久" : subscription.expiresAt ? fmtDate(subscription.expiresAt) : "-"}</b><div className="text-xs text-default-500">转发 {subscription.forwardCount || 0} / {subscription.forwardLimit || "不限"}</div></div></CardBody></Card>}
 
-      {!loading && allSubToken && (lines.length > 1 || customNodeCount > 0) && (
+      {!loading && allSubToken && (
         <Card className="border border-primary/40 bg-primary/5">
           <CardBody className="space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
               <Chip size="sm" color="primary" variant="flat">⭐ 全部线路</Chip>
-              <span className="text-sm text-default-600">一条链接包含下面所有线路,推荐用这条</span>
+              <span className="text-sm text-default-600">唯一订阅链接，包含全部线路</span>
               <Chip size="sm" variant="flat" className="ml-auto">
                 {lines.reduce((n: number, l: any) => n + (l.protocolCount || 0), 0)} 协议
               </Chip>
@@ -155,7 +153,7 @@ export default function MySubPage() {
             如果你就是管理员、想自己用,点那张卡上的「🔑 我自己用」即可。
           </CardBody>
         </Card>
-      ) : (
+      ) : !allSubToken ? (
         <div className="space-y-3">
           {lines.map((ln: any, idx: number) => {
             const url = subUrl(ln.subToken);
@@ -177,7 +175,7 @@ export default function MySubPage() {
                     <Chip size="sm" variant="flat" className="ml-auto">{ln.protocolCount} 协议</Chip>
                   </div>
 
-                  {/* 线路使用信息；账号套餐配额显示在仪表盘。 */}
+                  {/* 无聚合订阅时的兼容展示。 */}
                   <div className="flex items-center gap-6 text-sm">
                     <div>
                       <span className="text-default-500 text-xs">流量 </span>
@@ -247,13 +245,13 @@ export default function MySubPage() {
             );
           })}
         </div>
-      )}
+      ) : null}
 
       {/* 用法 */}
       <Card>
         <CardBody className="space-y-2 text-sm text-default-600">
           <div className="font-semibold">怎么用</div>
-          <div>复制上面任意一条订阅链接,在客户端里添加订阅:</div>
+          <div>复制上方“全部线路”订阅链接，在客户端里添加并更新订阅:</div>
           <ul className="list-disc pl-5 space-y-1 text-default-500">
             <li><b>v2rayN(Windows)</b>:订阅 → 订阅分组设置 → 添加 → 粘贴地址 → 确定 → 更新订阅</li>
             <li><b>小火箭 / Shadowrocket(iOS)</b>:右上角 + → 类型选「Subscribe」→ 粘贴地址</li>
