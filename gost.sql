@@ -455,6 +455,10 @@ CREATE TABLE IF NOT EXISTS `inbound_line` (
   KEY `idx_line_user_node` (`user_id`, `node_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- MyBatis uses this non-reserved name on both MySQL and PostgreSQL.
+-- The one-table view remains writable and preserves the legacy `user` table.
+CREATE OR REPLACE VIEW `tms_user` AS SELECT * FROM `user`;
+
 -- Automatic assignment targets. landing_id=0 is a direct protocol group;
 -- a nonzero landing_id is one relay line. Existing package users are filled
 -- immediately when an administrator enables a target.

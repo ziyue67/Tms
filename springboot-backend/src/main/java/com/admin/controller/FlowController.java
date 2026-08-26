@@ -121,7 +121,7 @@ public class FlowController extends BaseController {
 
             // 解析为GostConfigDto
             GostConfigDto gostConfigDto = JSON.parseObject(decryptedData, GostConfigDto.class);
-            checkGostConfigAsync.cleanNodeConfigs(node.getId().toString(), gostConfigDto);
+            checkGostConfigAsync.cleanNodeConfigs(node.getId(), gostConfigDto);
 
             log.info("🔓 节点 {} 配置数据接收成功{}", node.getId(), isEncryptedMessage(rawData) ? "（已解密）" : "");
 

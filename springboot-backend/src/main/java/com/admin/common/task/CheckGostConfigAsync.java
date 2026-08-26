@@ -53,9 +53,9 @@ public class CheckGostConfigAsync {
      * 清理孤立的Gost配置项
      */
     @Async
-    public void cleanNodeConfigs(String node_id, GostConfigDto gostConfig) {
+    public void cleanNodeConfigs(Long nodeId, GostConfigDto gostConfig) {
         System.out.println(JSONObject.toJSONString(gostConfig));
-        Node node = nodeService.getById(node_id);
+        Node node = nodeService.getById(nodeId);
         if (node != null) {
             cleanOrphanedServices(gostConfig, node);
             cleanOrphanedChains(gostConfig, node);

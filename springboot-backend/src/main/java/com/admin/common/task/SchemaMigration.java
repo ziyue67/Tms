@@ -28,6 +28,7 @@ public class SchemaMigration implements ApplicationRunner {
         try (Connection connection = dataSource.getConnection()) {
             Dialect dialect = Dialect.from(connection.getMetaData());
             migrateBaseColumns(connection, dialect);
+            createUserCompatibilityView(connection, dialect);
             migrateConfigColumns(connection, dialect);
             migrateCommerceTables(connection, dialect);
         }
@@ -43,6 +44,16 @@ public class SchemaMigration implements ApplicationRunner {
         addColumn(c, d, "user", "email", "VARCHAR(190) NULL");
         addColumn(c, d, "inbound", "landing_id", "BIGINT NULL");
         createUniqueIndex(c, d, "user", "uk_user_email", "email");
+    }
+
+    /**
+     * PostgreSQL treats user as a special identifier, while the original TMS
+     * schema uses it as a table name. Keep the legacy table intact and map the
+     * entity to this simple, writable view on both supported databases.
+     */
+    private void createUserCompatibilityView(Connection c, Dialect d) throws SQLException {
+        if (!tableExists(c, "user")) return;
+        execute(c, "CREATE OR REPLACE VIEW " + d.q("tms_user") + " AS SELECT * FROM " + d.q("user"));
     }
 
     /** Email HTML templates are substantially larger than the legacy 200-character setting value. */
