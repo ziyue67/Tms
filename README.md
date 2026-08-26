@@ -8,7 +8,7 @@ The upstream `LICENSE` and copyright notices remain applicable to the original c
 
 ### Account and commerce migration
 
-After importing `gost.sql`, apply `springboot-backend/src/main/resources/db/tms-account-commerce.sql`. The user-email additions are conditional, so the migration can be rerun safely on an existing database. Configure SMTP and payment callback secrets in the administrator's website configuration before enabling registration or payment callbacks.
+After importing `gost.sql`, apply `springboot-backend/src/main/resources/db/tms-account-commerce.sql`. The application also runs an idempotent JDBC migration at startup: old installations missing `user.email`, `user.all_sub_token`, or any account/commerce table used by the current entities are upgraded automatically for MySQL and PostgreSQL. Keep the SQL file for manual/bootstrap installs and backups. Configure SMTP and payment callback secrets in the administrator's website configuration before enabling registration or payment callbacks.
 
 ### Payment provider configuration
 

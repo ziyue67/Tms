@@ -11,62 +11,108 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Locale;
 
-/**
- * 启动时的表结构自动迁移。
- *
- * gost.sql 只在【新装】时执行一次,已经装好的面板 tms update 只换镜像、不动表结构。
- * 所以往实体里加字段必须配一次 ALTER,否则老用户一查就 Unknown column,面板直接崩。
- *
- * 这里只做「列不存在就加」这一种最安全的迁移:先查 information_schema 确认列缺失,
- * 再执行 ADD COLUMN。幂等、可重复执行,失败也只记日志不影响启动 ——
- * 迁移挂了顶多是新功能不可用,不能连带把整个面板拖死。
- */
+/** Idempotent migration for old TMS databases and external MySQL/PostgreSQL databases. */
 @Slf4j
 @Component
 @Order(1)
 public class SchemaMigration implements ApplicationRunner {
-
     @Resource
     private DataSource dataSource;
 
     @Override
-    public void run(ApplicationArguments args) {
-        // 转发机的「连接域名」:填了就用它生成节点链接,车友看到的是域名而不是车主的 IP
-        addColumnIfMissing("node", "domain",
-                "ALTER TABLE `node` ADD COLUMN `domain` VARCHAR(255) NULL COMMENT '连接域名(可选,留空用 server_ip)'");
-
-        // 「全部线路」聚合订阅 token:一条链接包含该车友所有未停用线路的节点
-        addColumnIfMissing("user", "all_sub_token",
-                "ALTER TABLE `user` ADD COLUMN `all_sub_token` VARCHAR(64) NULL COMMENT '全部线路聚合订阅token'");
+    public void run(ApplicationArguments args) throws Exception {
+        try (Connection connection = dataSource.getConnection()) {
+            Dialect dialect = Dialect.from(connection.getMetaData());
+            migrateBaseColumns(connection, dialect);
+            migrateCommerceTables(connection, dialect);
+        }
+        log.info("TMS database schema migration completed");
     }
 
-    /** 列不存在才执行 ddl;任何异常都吞掉(只记日志),不能因为迁移失败导致面板起不来 */
-    private void addColumnIfMissing(String table, String column, String ddl) {
-        try (Connection conn = dataSource.getConnection()) {
-            if (columnExists(conn, table, column)) {
-                return;
+    private void migrateBaseColumns(Connection c, Dialect d) throws SQLException {
+        addColumn(c, d, "node", "domain", "VARCHAR(255) NULL");
+        addColumn(c, d, "node", "cert_mode", "INTEGER NOT NULL DEFAULT 0");
+        addColumn(c, d, "node", "cert_path", "VARCHAR(500) NULL");
+        addColumn(c, d, "node", "key_path", "VARCHAR(500) NULL");
+        addColumn(c, d, "user", "all_sub_token", "VARCHAR(64) NULL");
+        addColumn(c, d, "user", "email", "VARCHAR(190) NULL");
+        addColumn(c, d, "inbound", "landing_id", "BIGINT NULL");
+        createUniqueIndex(c, d, "user", "uk_user_email", "email");
+    }
+
+    private void migrateCommerceTables(Connection c, Dialect d) throws SQLException {
+        String id = d.identity();
+        createTable(c, d, "subscription_plan", "(" +
+                "id " + id + ", name VARCHAR(100) NOT NULL, description VARCHAR(500), price DECIMAL(12,2) NOT NULL DEFAULT 0, currency VARCHAR(10) NOT NULL DEFAULT 'CNY', " +
+                "validity_value INTEGER NOT NULL, validity_unit VARCHAR(10) NOT NULL DEFAULT 'month', traffic_bytes BIGINT NOT NULL DEFAULT 0, reset_day INTEGER NOT NULL DEFAULT 1, max_forwards INTEGER NOT NULL DEFAULT 0, for_sale INTEGER NOT NULL DEFAULT 1, redeemable INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id))");
+        createTable(c, d, "user_subscription", "(" +
+                "id " + id + ", user_id BIGINT NOT NULL, plan_id BIGINT NOT NULL, starts_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, traffic_limit_bytes BIGINT NOT NULL DEFAULT 0, traffic_used_bytes BIGINT NOT NULL DEFAULT 0, next_reset_at BIGINT NULL, max_forwards INTEGER NOT NULL DEFAULT 0, used_forwards INTEGER NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (user_id))");
+        createTable(c, d, "redeem_code", "(" +
+                "id " + id + ", plan_id BIGINT NOT NULL, code_hash VARCHAR(64) NOT NULL, code_preview VARCHAR(20) NOT NULL, batch_id VARCHAR(64) NULL, status INTEGER NOT NULL DEFAULT 1, used_by BIGINT NULL, used_time BIGINT NULL, expires_at BIGINT NULL, remark VARCHAR(255) NULL, created_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (code_hash))");
+        createTable(c, d, "quota_usage_log", "(" +
+                "id " + id + ", user_id BIGINT NOT NULL, subscription_id BIGINT NULL, event_type VARCHAR(32) NOT NULL, amount BIGINT NOT NULL DEFAULT 0, metadata " + d.jsonType() + " NULL, created_time BIGINT NOT NULL, PRIMARY KEY (id))");
+        createTable(c, d, "payment_order", "(" +
+                "id " + id + ", order_no VARCHAR(64) NOT NULL, user_id BIGINT NOT NULL, plan_id BIGINT NOT NULL, provider VARCHAR(20) NOT NULL, amount DECIMAL(12,2) NOT NULL, currency VARCHAR(10) NOT NULL DEFAULT 'CNY', status VARCHAR(20) NOT NULL DEFAULT 'pending', provider_trade_no VARCHAR(128) NULL, callback_payload TEXT NULL, paid_at BIGINT NULL, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (order_no))");
+        createTable(c, d, "custom_node", "(" +
+                "id " + id + ", name VARCHAR(255) NOT NULL, protocol VARCHAR(32) NOT NULL, raw_link TEXT NOT NULL, parsed_json TEXT NOT NULL, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id))");
+        createTable(c, d, "user_custom_node", "(" +
+                "id " + id + ", user_id BIGINT NOT NULL, custom_node_id BIGINT NOT NULL, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (user_id, custom_node_id))");
+    }
+
+    private void addColumn(Connection c, Dialect d, String table, String column, String definition) throws SQLException {
+        if (!tableExists(c, table) || columnExists(c, table, column)) return;
+        execute(c, "ALTER TABLE " + d.q(table) + " ADD COLUMN " + d.q(column) + " " + definition);
+        log.info("Added missing database column {}.{}", table, column);
+    }
+
+    private void createTable(Connection c, Dialect d, String table, String definition) throws SQLException {
+        if (tableExists(c, table)) return;
+        execute(c, "CREATE TABLE " + d.q(table) + " " + definition);
+        log.info("Created missing database table {}", table);
+    }
+
+    private void createUniqueIndex(Connection c, Dialect d, String table, String index, String column) throws SQLException {
+        if (!tableExists(c, table) || indexExists(c, table, index)) return;
+        execute(c, "CREATE UNIQUE INDEX " + d.q(index) + " ON " + d.q(table) + " (" + d.q(column) + ")");
+    }
+
+    private void execute(Connection c, String sql) throws SQLException {
+        try (Statement statement = c.createStatement()) { statement.executeUpdate(sql); }
+    }
+
+    private boolean tableExists(Connection c, String table) throws SQLException {
+        DatabaseMetaData m = c.getMetaData();
+        try (ResultSet rs = m.getTables(c.getCatalog(), c.getSchema(), table, new String[]{"TABLE"})) {
+            if (rs.next()) return true;
+        }
+        try (ResultSet rs = m.getTables(c.getCatalog(), c.getSchema(), table.toUpperCase(Locale.ROOT), new String[]{"TABLE"})) { return rs.next(); }
+    }
+
+    private boolean columnExists(Connection c, String table, String column) throws SQLException {
+        DatabaseMetaData m = c.getMetaData();
+        try (ResultSet rs = m.getColumns(c.getCatalog(), c.getSchema(), table, column)) {
+            if (rs.next()) return true;
+        }
+        try (ResultSet rs = m.getColumns(c.getCatalog(), c.getSchema(), table.toUpperCase(Locale.ROOT), column.toUpperCase(Locale.ROOT))) { return rs.next(); }
+    }
+
+    private boolean indexExists(Connection c, String table, String index) throws SQLException {
+        try (ResultSet rs = c.getMetaData().getIndexInfo(c.getCatalog(), c.getSchema(), table, false, false)) {
+            while (rs.next()) {
+                if (index.equalsIgnoreCase(rs.getString("INDEX_NAME"))) return true;
             }
-            try (Statement st = conn.createStatement()) {
-                st.executeUpdate(ddl);
-                log.info("表结构迁移: {}.{} 已添加", table, column);
-            }
-        } catch (Exception e) {
-            // 并发启动时另一个实例可能刚好加完(1060 Duplicate column),这属于正常情况
-            String msg = e.getMessage() == null ? "" : e.getMessage();
-            if (msg.contains("Duplicate column") || msg.contains("1060")) {
-                log.debug("表结构迁移: {}.{} 已存在,跳过", table, column);
-            } else {
-                log.warn("表结构迁移失败 {}.{}: {}", table, column, msg);
-            }
+            return false;
         }
     }
 
-    private boolean columnExists(Connection conn, String table, String column) throws Exception {
-        DatabaseMetaData meta = conn.getMetaData();
-        try (ResultSet rs = meta.getColumns(conn.getCatalog(), null, table, column)) {
-            return rs.next();
-        }
+    private record Dialect(boolean postgres) {
+        static Dialect from(DatabaseMetaData metadata) throws SQLException { return new Dialect(metadata.getDatabaseProductName().toLowerCase(Locale.ROOT).contains("postgres")); }
+        String q(String value) { return postgres ? "\"" + value + "\"" : "`" + value + "`"; }
+        String identity() { return postgres ? "BIGINT GENERATED BY DEFAULT AS IDENTITY" : "BIGINT AUTO_INCREMENT"; }
+        String jsonType() { return postgres ? "JSONB" : "JSON"; }
     }
 }
