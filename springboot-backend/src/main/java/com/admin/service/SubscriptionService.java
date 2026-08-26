@@ -50,12 +50,20 @@ public class SubscriptionService {
     }
 
     public UserSubscription current(long userId) {
-        return subscriptions.selectOne(new QueryWrapper<UserSubscription>().eq("user_id", userId).eq("status", 1).orderByDesc("id").last("limit 1"));
+        UserSubscription item = subscriptions.selectOne(new QueryWrapper<UserSubscription>().eq("user_id", userId).eq("status", 1).orderByDesc("id").last("limit 1"));
+        return enrich(item);
     }
 
     /** Administrative lifecycle operations must still see a disabled subscription record. */
     public UserSubscription latest(long userId) {
-        return subscriptions.selectOne(new QueryWrapper<UserSubscription>().eq("user_id", userId).orderByDesc("id").last("limit 1"));
+        return enrich(subscriptions.selectOne(new QueryWrapper<UserSubscription>().eq("user_id", userId).orderByDesc("id").last("limit 1")));
+    }
+
+    private UserSubscription enrich(UserSubscription item) {
+        if (item == null || item.getPlanId() == null) return item;
+        SubscriptionPlan plan = plans.selectById(item.getPlanId());
+        if (plan != null) { item.setPlanName(plan.getName()); item.setPlanDescription(plan.getDescription()); item.setPlanValidityValue(plan.getValidityValue()); item.setPlanValidityUnit(plan.getValidityUnit()); }
+        return item;
     }
 
     @Transactional
@@ -163,6 +171,8 @@ public class SubscriptionService {
         result.put("expiresAt", active == null ? null : active.getExpiresAt()); result.put("nextResetAt", active == null ? null : active.getNextResetAt());
         long forwardCount = forwards.selectCount(new QueryWrapper<com.admin.entity.Forward>().eq("user_id", userId).ne("status", -1));
         result.put("forwardCount", forwardCount); result.put("forwardLimit", active == null ? 0 : active.getMaxForwards()); result.put("planId", active == null ? null : active.getPlanId());
+        result.put("planName", active == null ? null : active.getPlanName()); result.put("planDescription", active == null ? null : active.getPlanDescription());
+        result.put("validityValue", active == null ? null : active.getPlanValidityValue()); result.put("validityUnit", active == null ? null : active.getPlanValidityUnit());
         long cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000;
         List<StatisticsFlow> hourly = statistics.selectList(new QueryWrapper<StatisticsFlow>().eq("user_id", userId).ge("created_time", cutoff).orderByAsc("created_time"));
         result.put("last24Hours", hourly); result.put("accountUsedTrafficBytes", user == null ? 0 : safe(user.getInFlow()) + safe(user.getOutFlow()));
@@ -185,7 +195,7 @@ public class SubscriptionService {
         item.setMaxForwards(plan.getMaxForwards()); item.setUsedForwards(old == null ? 0 : old.getUsedForwards()); item.setStatus(1); item.setUpdatedTime(now);
         if (old == null) { item.setCreatedTime(now); subscriptions.insert(item); } else subscriptions.updateById(item);
         audit(item, "plan_activated", 0L, "planId=" + planId);
-        return item;
+        return enrich(item);
     }
 
     @Transactional

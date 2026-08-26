@@ -3,6 +3,7 @@ package com.admin.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -68,6 +69,13 @@ public class User extends BaseEntity {
      * 以后给他新开线路也不用重发链接 —— 客户端更新订阅就自动出现。
      */
     private String allSubToken;
+
+    @TableField(exist = false) private Long subscriptionPlanId;
+    @TableField(exist = false) private String subscriptionPlanName;
+    @TableField(exist = false) private Long subscriptionTrafficLimitBytes;
+    @TableField(exist = false) private Long subscriptionTrafficUsedBytes;
+    @TableField(exist = false) private Long subscriptionExpiresAt;
+    @TableField(exist = false) private Integer subscriptionMaxForwards;
 
 
 }

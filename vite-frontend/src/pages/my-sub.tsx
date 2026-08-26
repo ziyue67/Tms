@@ -4,7 +4,7 @@ import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Chip } from "@heroui/chip";
 import toast from "react-hot-toast";
-import { getMyLines, getUserPackageInfo } from "@/api";
+import { getMyLines, getSubscriptionDashboard, getUserPackageInfo } from "@/api";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { SubQrToggle } from "@/components/sub-qr";
 
@@ -19,6 +19,7 @@ export default function MySubPage() {
   const [allSubToken, setAllSubToken] = useState<string>("");
   const [customNodeCount, setCustomNodeCount] = useState(0);
   const [account, setAccount] = useState<any>(null); // 只用来判断账号是否被停用/到期
+  const [subscription, setSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const subUrl = (token: string) => `${window.location.origin}/api/v1/open_api/sub?token=${token}`;
@@ -28,7 +29,7 @@ export default function MySubPage() {
 
   const load = async () => {
     try {
-      const [ln, pkg] = await Promise.all([getMyLines(), getUserPackageInfo()]);
+      const [ln, pkg, sub] = await Promise.all([getMyLines(), getUserPackageInfo(), getSubscriptionDashboard()]);
       if (ln.code === 0) {
         // 后端返回结构从数组改成了 {lines, allSubToken},这里两种都认,
         // 万一前后端镜像版本不同步也不会白屏
@@ -40,6 +41,7 @@ export default function MySubPage() {
         }
       }
       if (pkg.code === 0) setAccount(pkg.data?.userInfo || null);
+      if (sub.code === 0) setSubscription(sub.data || null);
     } catch (e) {
       toast.error("加载失败");
     }
@@ -74,6 +76,8 @@ export default function MySubPage() {
           </CardBody>
         </Card>
       )}
+
+      {subscription?.planName && <Card className="border border-primary/40"><CardBody className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"><div><div className="text-default-500 text-xs">当前套餐</div><b>{subscription.planName}</b></div><div><div className="text-default-500 text-xs">流量</div><b>{subscription.totalTrafficBytes ? `${(Number(subscription.totalTrafficBytes) / GB).toFixed(2)} GB` : "不限"}</b></div><div><div className="text-default-500 text-xs">已使用</div><b>{fmtGB(subscription.usedTrafficBytes)}</b></div><div><div className="text-default-500 text-xs">到期 / 转发</div><b>{subscription.expiresAt === 0 ? "永久" : subscription.expiresAt ? fmtDate(subscription.expiresAt) : "-"}</b><div className="text-xs text-default-500">转发 {subscription.forwardCount || 0} / {subscription.forwardLimit || "不限"}</div></div></CardBody></Card>}
 
       {!loading && allSubToken && (lines.length > 1 || customNodeCount > 0) && (
         <Card className="border border-primary/40 bg-primary/5">

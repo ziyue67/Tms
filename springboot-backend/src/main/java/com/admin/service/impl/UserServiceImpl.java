@@ -13,6 +13,8 @@ import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.UserMapper;
 import com.admin.mapper.UserTunnelMapper;
+import com.admin.mapper.UserSubscriptionMapper;
+import com.admin.mapper.SubscriptionPlanMapper;
 import com.admin.service.*;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -100,6 +102,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     
     @Resource
     private UserTunnelMapper userTunnelMapper;
+
+    @Resource private UserSubscriptionMapper userSubscriptionMapper;
+    @Resource private SubscriptionPlanMapper subscriptionPlanMapper;
 
     @Resource
     @Lazy
@@ -207,7 +212,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      */
     @Override
     public R getAllUsers() {
-        return R.ok(this.list(new QueryWrapper<User>().ne("role_id", ADMIN_ROLE_ID)));
+        List<User> result = this.list(new QueryWrapper<User>().ne("role_id", ADMIN_ROLE_ID));
+        result.forEach(this::attachSubscription);
+        return R.ok(result);
     }
 
     /**
@@ -699,6 +706,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private UserPackageDto buildUserPackageDto(CurrentUserInfo currentUser) {
         User user = currentUser.getUser();
         Integer roleId = currentUser.getRoleId();
+        attachSubscription(user);
         
         // 1. 构造用户基本信息
         UserPackageDto.UserInfoDto userInfo = buildUserInfoDto(user);
@@ -741,7 +749,32 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userInfo.setFlowResetTime(user.getFlowResetTime());
         userInfo.setCreatedTime(user.getCreatedTime());
         userInfo.setUpdatedTime(user.getUpdatedTime());
+        userInfo.setSubscriptionPlanId(user.getSubscriptionPlanId());
+        userInfo.setSubscriptionPlanName(user.getSubscriptionPlanName());
+        SubscriptionPlan subscriptionPlan = user.getSubscriptionPlanId() == null ? null : subscriptionPlanMapper.selectById(user.getSubscriptionPlanId());
+        userInfo.setSubscriptionPlanDescription(subscriptionPlan == null ? null : subscriptionPlan.getDescription());
+        userInfo.setSubscriptionValidityValue(subscriptionPlan == null ? null : subscriptionPlan.getValidityValue());
+        userInfo.setSubscriptionValidityUnit(subscriptionPlan == null ? null : subscriptionPlan.getValidityUnit());
+        userInfo.setSubscriptionTrafficLimitBytes(user.getSubscriptionTrafficLimitBytes());
+        userInfo.setSubscriptionTrafficUsedBytes(user.getSubscriptionTrafficUsedBytes());
+        userInfo.setSubscriptionExpiresAt(user.getSubscriptionExpiresAt());
+        userInfo.setSubscriptionMaxForwards(user.getSubscriptionMaxForwards());
         return userInfo;
+    }
+
+    private void attachSubscription(User user) {
+        UserSubscription item = userSubscriptionMapper.selectOne(new QueryWrapper<UserSubscription>().eq("user_id", user.getId()).orderByDesc("id").last("limit 1"));
+        if (item == null) return;
+        SubscriptionPlan plan = subscriptionPlanMapper.selectById(item.getPlanId());
+        user.setSubscriptionPlanId(item.getPlanId()); user.setSubscriptionPlanName(plan == null ? null : plan.getName());
+        user.setSubscriptionTrafficLimitBytes(item.getTrafficLimitBytes()); user.setSubscriptionTrafficUsedBytes(item.getTrafficUsedBytes()); user.setSubscriptionExpiresAt(item.getExpiresAt()); user.setSubscriptionMaxForwards(item.getMaxForwards());
+        // The legacy dashboard consumes GB-based user fields. Populate its response from the
+        // subscription without persisting those compatibility values back to the user table.
+        long limit = item.getTrafficLimitBytes() == null ? 0L : item.getTrafficLimitBytes();
+        user.setFlow(limit == 0 ? 99999L : Math.max(1L, (long) Math.ceil(limit / 1073741824d)));
+        user.setInFlow(item.getTrafficUsedBytes() == null ? 0L : item.getTrafficUsedBytes()); user.setOutFlow(0L);
+        user.setNum(item.getMaxForwards() == null || item.getMaxForwards() == 0 ? 99999 : item.getMaxForwards());
+        user.setExpTime(item.getExpiresAt()); user.setFlowResetTime(plan == null ? user.getFlowResetTime() : (long) plan.getResetDay());
     }
 
     /**

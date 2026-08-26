@@ -18,6 +18,12 @@ export interface User {
   createdTime?: number; // 创建时间戳
   inFlow?: number; // 下载流量(字节)
   outFlow?: number; // 上传流量(字节)
+  subscriptionPlanId?: number;
+  subscriptionPlanName?: string;
+  subscriptionTrafficLimitBytes?: number;
+  subscriptionTrafficUsedBytes?: number;
+  subscriptionExpiresAt?: number;
+  subscriptionMaxForwards?: number;
 }
 
 export interface UserForm {

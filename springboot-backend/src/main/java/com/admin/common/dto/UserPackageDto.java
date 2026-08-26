@@ -48,6 +48,15 @@ public class UserPackageDto {
         private Long flowResetTime;  // 流量重置时间
         private Long createdTime;
         private Long updatedTime;
+        private Long subscriptionPlanId;
+        private String subscriptionPlanName;
+        private String subscriptionPlanDescription;
+        private Long subscriptionTrafficLimitBytes;
+        private Long subscriptionTrafficUsedBytes;
+        private Long subscriptionExpiresAt;
+        private Integer subscriptionMaxForwards;
+        private Integer subscriptionValidityValue;
+        private String subscriptionValidityUnit;
     }
     
     /**
@@ -88,4 +97,4 @@ public class UserPackageDto {
         private Integer status;
         private Long createdTime;
     }
-} 
+}

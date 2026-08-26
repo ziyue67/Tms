@@ -646,9 +646,12 @@ export default function UserPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
           {users.map((user) => {
             const userStatus = getUserStatus(user);
-            const expStatus = user.expTime ? getExpireStatus(user.expTime) : null;
-            const usedFlow = calculateUserTotalUsedFlow(user);
-            const flowPercent = user.flow > 0 ? Math.min((usedFlow / (user.flow * 1024 * 1024 * 1024)) * 100, 100) : 0;
+            const hasSubscription = user.subscriptionPlanId !== undefined && user.subscriptionPlanId !== null;
+            const expTime = hasSubscription ? user.subscriptionExpiresAt : user.expTime;
+            const expStatus = expTime ? getExpireStatus(expTime) : null;
+            const usedFlow = hasSubscription ? Number(user.subscriptionTrafficUsedBytes || 0) : calculateUserTotalUsedFlow(user);
+            const flowLimit = hasSubscription ? Number(user.subscriptionTrafficLimitBytes || 0) : Number(user.flow || 0) * 1024 * 1024 * 1024;
+            const flowPercent = flowLimit > 0 ? Math.min((usedFlow / flowLimit) * 100, 100) : 0;
             
             return (
               <Card 
@@ -680,9 +683,10 @@ export default function UserPage() {
                   <div className="space-y-2">
                     {/* 流量信息 */}
                     <div className="space-y-1.5">
+                      {hasSubscription && <div className="flex justify-between text-sm"><span className="text-default-600">套餐</span><span className="font-medium text-xs">{user.subscriptionPlanName || "已开通"}</span></div>}
                       <div className="flex justify-between text-sm">
                         <span className="text-default-600">流量限制</span>
-                        <span className="font-medium text-xs">{formatFlow(user.flow, 'gb')}</span>
+                        <span className="font-medium text-xs">{flowLimit > 0 ? formatFlow(flowLimit) : "不限"}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-default-600">已使用</span>
@@ -701,19 +705,19 @@ export default function UserPage() {
                     <div className="space-y-1.5 pt-2 border-t border-divider">
                       <div className="flex justify-between text-sm">
                         <span className="text-default-600">转发数量</span>
-                        <span className="font-medium text-xs">{user.num}</span>
+                        <span className="font-medium text-xs">{hasSubscription ? (user.subscriptionMaxForwards || "不限") : user.num}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-default-600">重置日期</span>
                         <span className="text-xs">{user.flowResetTime === 0 ? '不重置' : `每月${user.flowResetTime}号`}</span>
                       </div>
                       {/* 用 > 0 而不是直接判真:expTime=0 是「永久」,`0 &&` 会把 0 渲染出来 */}
-                      {!!user.expTime && user.expTime > 0 && (
+                      {!!expTime && expTime > 0 && (
                         <div className="flex justify-between text-sm">
                           <span className="text-default-600">过期时间</span>
                           <div className="text-right">
                             {expStatus && expStatus.color === 'success' ? (
-                              <div className="text-xs">{formatDate(user.expTime)}</div>
+                              <div className="text-xs">{formatDate(expTime)}</div>
                             ) : (
                               <Chip 
                                 color={expStatus?.color || 'default'} 
@@ -1681,4 +1685,4 @@ export default function UserPage() {
       </div>
 
   );
-} 
+}
