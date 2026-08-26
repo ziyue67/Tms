@@ -37,7 +37,7 @@ export default function UserSubscriptionDashboardPage() {
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       <Card><CardBody><div className="text-xs text-default-500">套餐总流量</div><div className="text-lg font-semibold">{bytes(total)}</div></CardBody></Card>
       <Card><CardBody><div className="text-xs text-default-500">已使用</div><div className="text-lg font-semibold">{total ? bytes(used) : bytes(data?.accountUsedTrafficBytes)}</div></CardBody></Card>
-      <Card><CardBody><div className="text-xs text-default-500">到期时间</div><div className="text-sm font-semibold">{data?.expiresAt ? new Date(data.expiresAt).toLocaleString() : "未开通套餐"}</div></CardBody></Card>
+      <Card><CardBody><div className="text-xs text-default-500">到期时间</div><div className="text-sm font-semibold">{data?.expiresAt === 0 ? "永久" : data?.expiresAt ? new Date(data.expiresAt).toLocaleString() : "未开通套餐"}</div></CardBody></Card>
     </div>
     <Card><CardHeader><div><div className="font-semibold">近 24 小时流量</div><div className="text-xs text-default-500">按统计任务生成的小时流量</div></div></CardHeader><CardBody><div className="h-64">{chart.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chart}><XAxis dataKey="time" minTickGap={24} /><YAxis tickFormatter={(value) => bytes(Number(value))} width={72} /><Tooltip formatter={(value) => bytes(Number(value))} /><Line type="monotone" dataKey="flow" stroke="#2563eb" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer> : <div className="h-full grid place-items-center text-sm text-default-400">暂无最近 24 小时流量记录</div>}</div></CardBody></Card>
   </div>;
