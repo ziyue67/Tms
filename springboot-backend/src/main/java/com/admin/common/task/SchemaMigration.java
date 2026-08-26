@@ -61,6 +61,10 @@ public class SchemaMigration implements ApplicationRunner {
                 "id " + id + ", name VARCHAR(255) NOT NULL, protocol VARCHAR(32) NOT NULL, raw_link TEXT NOT NULL, parsed_json TEXT NOT NULL, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id))");
         createTable(c, d, "user_custom_node", "(" +
                 "id " + id + ", user_id BIGINT NOT NULL, custom_node_id BIGINT NOT NULL, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (user_id, custom_node_id))");
+        createTable(c, d, "verification_code", "(" +
+                "id " + id + ", email VARCHAR(190) NOT NULL, purpose VARCHAR(32) NOT NULL, code_hash VARCHAR(100) NOT NULL, " +
+                "expires_at BIGINT NOT NULL, sent_at BIGINT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, consumed_at BIGINT NULL, " +
+                "created_at BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (id), UNIQUE (email, purpose))");
     }
 
     private void addColumn(Connection c, Dialect d, String table, String column, String definition) throws SQLException {

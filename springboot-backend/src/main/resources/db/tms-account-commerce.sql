@@ -110,3 +110,16 @@ CREATE TABLE IF NOT EXISTS `user_custom_node` (
   `created_time` bigint NOT NULL,
   PRIMARY KEY (`id`), UNIQUE KEY `uk_user_custom_node` (`user_id`,`custom_node_id`), KEY `idx_custom_node_user` (`custom_node_id`,`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `verification_code` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `email` varchar(190) NOT NULL,
+  `purpose` varchar(32) NOT NULL,
+  `code_hash` varchar(100) NOT NULL COMMENT 'BCrypt 摘要，绝不保存验证码明文',
+  `expires_at` bigint NOT NULL,
+  `sent_at` bigint NOT NULL,
+  `attempts` int NOT NULL DEFAULT 0,
+  `consumed_at` bigint DEFAULT NULL,
+  `created_at` bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`), UNIQUE KEY `uk_verification_email_purpose` (`email`,`purpose`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

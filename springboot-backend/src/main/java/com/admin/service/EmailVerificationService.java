@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -16,9 +18,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class EmailVerificationService {
     private final ViteConfigService configs;
+    private final JdbcTemplate jdbc;
     private final org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder encoder =
             new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
-    private final Map<String, Entry> pending = new ConcurrentHashMap<>();
     private final Map<String, RateWindow> emailSendWindows = new ConcurrentHashMap<>();
     private final Map<String, RateWindow> ipSendWindows = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
@@ -26,9 +28,11 @@ public class EmailVerificationService {
     private final long cooldownSeconds;
 
     public EmailVerificationService(ViteConfigService configs,
+                                    JdbcTemplate jdbc,
                                     @Value("${tms.auth.verification-expire-seconds:600}") long expireSeconds,
                                     @Value("${tms.auth.verification-cooldown-seconds:60}") long cooldownSeconds) {
         this.configs = configs;
+        this.jdbc = jdbc;
         this.expireSeconds = Math.max(60, expireSeconds);
         this.cooldownSeconds = Math.max(10, cooldownSeconds);
     }
@@ -56,10 +60,9 @@ public class EmailVerificationService {
     }
 
     private void sendCode(String normalized, Purpose purpose) {
-        String pendingKey = key(normalized, purpose);
         long cooldown = secondsConfig("email_code_cooldown_seconds", cooldownSeconds, 10, 3600);
         long expiry = secondsConfig("email_code_expire_seconds", expireSeconds, 60, 86400);
-        Entry old = pending.get(pendingKey);
+        Entry old = loadPending(normalized, purpose);
         long now = Instant.now().getEpochSecond();
         if (old != null && old.sentAt + cooldown > now) {
             throw new IllegalArgumentException("验证码发送过于频繁，请稍后再试");
@@ -69,7 +72,10 @@ public class EmailVerificationService {
         String subject = purpose == Purpose.PASSWORD_RESET ? "TMS 密码重置验证码" : "TMS 注册验证码";
         String action = purpose == Purpose.PASSWORD_RESET ? "重置密码" : "注册账号";
         sendMessage(mailSender, normalized, subject, "你的 TMS " + action + "验证码是 " + code + "，有效期 " + (expiry / 60) + " 分钟。请勿将验证码泄露给他人。");
-        pending.put(pendingKey, new Entry(encoder.encode(code), now + expiry, now, 0));
+        // Persist only the BCrypt digest. The plaintext code is never written to the database or logs.
+        jdbc.update("DELETE FROM verification_code WHERE email = ? AND purpose = ?", normalized, purpose.name());
+        jdbc.update("INSERT INTO verification_code (email, purpose, code_hash, expires_at, sent_at, attempts, consumed_at) VALUES (?, ?, ?, ?, ?, 0, NULL)",
+                normalized, purpose.name(), encoder.encode(code), now + expiry, now);
     }
 
     public void sendTest(String email) {
@@ -82,28 +88,29 @@ public class EmailVerificationService {
         return consume(email, code, Purpose.REGISTER);
     }
 
+    @Transactional
     public boolean consume(String email, String code, Purpose purpose) {
         if (code == null || code.trim().isEmpty()) return false;
         String normalized = normalize(email);
-        String pendingKey = key(normalized, purpose);
-        Entry entry = pending.get(pendingKey);
+        Entry entry = loadPending(normalized, purpose);
         long now = Instant.now().getEpochSecond();
         if (entry == null) return false;
         if (entry.expiresAt < now) {
-            pending.remove(pendingKey, entry);
+            jdbc.update("DELETE FROM verification_code WHERE id = ?", entry.id);
             return false;
         }
         if (!encoder.matches(code.trim(), entry.hash)) {
-            if (entry.attempts >= 4) pending.remove(pendingKey, entry);
-            else pending.replace(pendingKey, entry, new Entry(entry.hash, entry.expiresAt, entry.sentAt, entry.attempts + 1));
+            jdbc.update("UPDATE verification_code SET attempts = attempts + 1 WHERE id = ? AND consumed_at IS NULL AND attempts < 5", entry.id);
+            jdbc.update("DELETE FROM verification_code WHERE id = ? AND attempts >= 5", entry.id);
             return false;
         }
-        pending.remove(pendingKey, entry);
-        return true;
+        return jdbc.update("UPDATE verification_code SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL", Instant.now().getEpochSecond(), entry.id) == 1;
     }
 
-    private String key(String email, Purpose purpose) {
-        return purpose.name() + ":" + email;
+    private Entry loadPending(String email, Purpose purpose) {
+        return jdbc.query("SELECT id, code_hash, expires_at, sent_at, attempts FROM verification_code WHERE email = ? AND purpose = ? AND consumed_at IS NULL ORDER BY id DESC",
+                rs -> rs.next() ? new Entry(rs.getLong("id"), rs.getString("code_hash"), rs.getLong("expires_at"), rs.getLong("sent_at"), rs.getInt("attempts")) : null,
+                email, purpose.name());
     }
 
     private JavaMailSenderImpl createSender() {
@@ -169,7 +176,7 @@ public class EmailVerificationService {
         }
     }
 
-    private record Entry(String hash, long expiresAt, long sentAt, int attempts) {}
+    private record Entry(long id, String hash, long expiresAt, long sentAt, int attempts) {}
     private record RateWindow(long startedAt, int count) {}
 
     public enum Purpose { REGISTER, PASSWORD_RESET }
