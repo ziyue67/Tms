@@ -587,7 +587,9 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         int skipped = 0;
         java.util.List<String> errors = new java.util.ArrayList<>();
         for (User user : userMapper.selectList(new QueryWrapper<User>().eq("status", 1))) {
-            if (user.getRoleId() != null && user.getRoleId() == 0) {
+            // Administrators are unlimited panel accounts, never provision them as package subscribers.
+            if ((user.getRoleId() != null && user.getRoleId() == 0)
+                    || "root".equalsIgnoreCase(user.getUser())) {
                 continue;
             }
             if (subscriptionService.current(user.getId()) == null || !subscriptionService.isSubscriptionUsable(user.getId())) {
