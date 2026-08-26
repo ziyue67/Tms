@@ -13,6 +13,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Objects;
@@ -21,6 +22,8 @@ import java.util.Objects;
 @CrossOrigin
 @RequestMapping("/api/v1/open_api")
 public class OpenApiController extends BaseController {
+
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Autowired
     private InboundService inboundService;
@@ -66,9 +69,18 @@ public class OpenApiController extends BaseController {
             return R.err("鉴权失败");
         }
 
-        String pwdMd5 = Md5Util.md5(pwd);
-        if (!Objects.equals(pwdMd5, userInfo.getPwd())) {
+        boolean bcrypt = userInfo.getPwd() != null && userInfo.getPwd().startsWith("$2");
+        boolean passwordMatches = bcrypt
+                ? passwordEncoder.matches(pwd, userInfo.getPwd())
+                : Objects.equals(Md5Util.md5(pwd), userInfo.getPwd());
+        if (!passwordMatches) {
             return R.err("鉴权失败");
+        }
+        // Legacy MD5 accounts are upgraded after a successful compatibility login.
+        if (!bcrypt) {
+            userInfo.setPwd(passwordEncoder.encode(pwd));
+            userInfo.setUpdatedTime(System.currentTimeMillis());
+            userService.updateById(userInfo);
         }
 
         final long GIGA = 1024L * 1024L * 1024L;
