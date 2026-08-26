@@ -116,7 +116,7 @@ public class EmailVerificationService {
         String link = resetUrlBase + "/reset-password?email=" + java.net.URLEncoder.encode(normalized, java.nio.charset.StandardCharsets.UTF_8) + "&token=" + java.net.URLEncoder.encode(token, java.nio.charset.StandardCharsets.UTF_8);
         JavaMailSenderImpl mailSender = createSender();
         String subject = configOr("email_reset_subject", "TMS 密码重置");
-        String content = configOr("email_reset_template", "请点击以下链接重置密码（有效期 {{expires_minutes}} 分钟，使用一次后失效）：\\n{{reset_url}}\\n\\n如果不是你本人操作，请忽略此邮件。");
+        String content = configOr("email_reset_template", "请点击以下链接重置密码（有效期 {{expires_minutes}} 分钟，使用一次后失效）：\n{{reset_url}}\n\n如果不是你本人操作，请忽略此邮件。");
         sendMessage(mailSender, normalized, render(subject, "", expiry, link), render(content, "", expiry, link));
         jdbc.update("DELETE FROM verification_code WHERE email = ? AND purpose = ?", normalized, Purpose.PASSWORD_RESET.name());
         jdbc.update("INSERT INTO verification_code (email, purpose, code_hash, expires_at, sent_at, attempts, consumed_at) VALUES (?, ?, ?, ?, ?, 0, NULL)",
