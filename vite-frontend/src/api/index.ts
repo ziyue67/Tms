@@ -49,6 +49,7 @@ export const assignCustomNode = (nodeId: number, userId: number) => Network.post
 export const unassignCustomNode = (nodeId: number, userId: number) => Network.delete(`/custom-nodes/${nodeId}/assign/${userId}`);
 export const deleteCustomNode = (nodeId: number) => Network.delete(`/custom-nodes/${nodeId}`);
 export const disableCustomNode = (nodeId: number) => Network.post(`/custom-nodes/${nodeId}/disable`);
+export const enableCustomNode = (nodeId: number) => Network.post(`/custom-nodes/${nodeId}/enable`);
 export const getAuthConfig = () => Network.get("/auth/config");
 export const testAdminEmail = (email: string) => Network.post("/admin/email/test", { email });
 export const getAdminEmailHealth = () => Network.get("/admin/email/health");

@@ -24,6 +24,7 @@ import {
   importCustomNode,
   deleteCustomNode,
   disableCustomNode,
+  enableCustomNode,
   buildMeteredCustomRelay,
 } from "@/api";
 import { copyTextToClipboard } from "@/utils/clipboard";
@@ -422,6 +423,7 @@ export default function InboundPage() {
           {customNodes.map((node) => <div key={node.id} className="flex flex-wrap items-center gap-2 border-t border-divider pt-3">
             <Chip size="sm" color={node.status === 1 ? "success" : "default"}>{({ vless: "VLESS-Reality", trojan: "Trojan-Reality", vmess: "VMess", hysteria2: "Hysteria2", tuic: "TUIC", anytls: "AnyTLS" } as any)[node.protocol] || node.protocol}</Chip>
             <span className="font-medium">{node.name}</span>
+            <Chip size="sm" variant="flat" color={node.status === 1 ? "success" : "default"}>{node.status === 1 ? "已启用" : "已停用"}</Chip>
             <Chip size="sm" variant="flat" color="primary">{node.visibility === "users" ? `按用户 (${(node.userIds || []).length})` : "全局聚合"}</Chip>
             {node.visibility === "users" && (node.userIds || []).map((id: number) => {
               const user = users.find((u) => Number(u.id) === Number(id));
@@ -429,7 +431,8 @@ export default function InboundPage() {
             })}
             {node.status === 1 && <Button size="sm" color="secondary" variant="flat" onPress={() => openMeteredRelay(node)}>设为计费中转</Button>}
             {node.status === 1 && <Button size="sm" color="warning" variant="flat" onPress={async () => { if (window.confirm(`停用「${node.name}」？`)) { const r = await disableCustomNode(node.id); if (r.code === 0) { toast.success("已停用"); loadAll(); } else toast.error(r.msg || "停用失败"); } }}>停用</Button>}
-            <Button size="sm" color="danger" variant="flat" onPress={async () => { if (window.confirm(`永久删除「${node.name}」？此操作不可恢复`)) { const r = await deleteCustomNode(node.id); if (r.code === 0) { toast.success("已删除"); loadAll(); } else toast.error(r.msg || "删除失败"); } }}>删除</Button>
+            {node.status !== 1 && <Button size="sm" color="success" variant="flat" onPress={async () => { const r = await enableCustomNode(node.id); if (r.code === 0) { toast.success("已启用"); loadAll(); } else toast.error(r.msg || "启用失败"); } }>启用</Button>}
+            <Button size="sm" color="danger" variant="flat" onPress={async () => { if (window.confirm(`永久删除「${node.name}」？此操作不可恢复`)) { setCustomNodes((current) => current.filter((item) => item.id !== node.id)); const r = await deleteCustomNode(node.id); if (r.code === 0) { toast.success("已删除"); loadAll(); } else { toast.error(r.msg || "删除失败"); loadAll(); } } }}>删除</Button>
           </div>)}
         </CardBody>
       </Card>}

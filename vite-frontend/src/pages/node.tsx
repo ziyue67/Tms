@@ -124,7 +124,15 @@ export default function NodePage() {
         setNodeList(res.data.map((node: any) => ({
           ...node,
           connectionStatus: node.status === 1 ? 'online' : 'offline',
-          systemInfo: null,
+          systemInfo: node.systemInfo ? {
+            cpuUsage: parseFloat(node.systemInfo.cpu_usage) || 0,
+            memoryUsage: parseFloat(node.systemInfo.memory_usage) || 0,
+            uploadTraffic: parseInt(node.systemInfo.bytes_transmitted) || 0,
+            downloadTraffic: parseInt(node.systemInfo.bytes_received) || 0,
+            uploadSpeed: 0,
+            downloadSpeed: 0,
+            uptime: parseInt(node.systemInfo.uptime) || 0,
+          } : null,
           copyLoading: false
         })));
       } else {

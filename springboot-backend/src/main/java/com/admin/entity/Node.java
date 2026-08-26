@@ -60,6 +60,10 @@ public class Node extends BaseEntity {
     @com.baomidou.mybatisplus.annotation.TableField(exist = false)
     private String singboxInstallErr;
 
+    /** Last system sample received through the node WebSocket. */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private java.util.Map<String, Object> systemInfo;
+
     private String version;
 
     private Integer portSta;

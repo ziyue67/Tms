@@ -71,9 +71,20 @@ public class CustomNodeService {
         return nodes.selectById(nodeId);
     }
 
+    /** Re-publish an explicitly disabled external node. */
+    public CustomNode enable(Long nodeId) {
+        CustomNode node = nodes.selectById(nodeId);
+        if (node == null) throw new IllegalArgumentException("自定义节点不存在");
+        node.setStatus(1); node.setUpdatedTime(System.currentTimeMillis());
+        if (nodes.updateById(node) != 1) throw new IllegalArgumentException("启用自定义节点失败");
+        return nodes.selectById(nodeId);
+    }
+
     @Transactional
     public void delete(Long nodeId) {
-        if (nodes.selectById(nodeId) == null) throw new IllegalArgumentException("自定义节点不存在");
+        // Deletion is idempotent: a stale browser tab must be able to clear an already
+        // converted/deleted row instead of getting stuck with “node does not exist”.
+        if (nodes.selectById(nodeId) == null) return;
         assignments.delete(new QueryWrapper<UserCustomNode>().eq("custom_node_id", nodeId));
         if (nodes.deleteById(nodeId) != 1) throw new IllegalArgumentException("删除自定义节点失败");
     }

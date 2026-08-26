@@ -30,6 +30,8 @@ public class CustomNodeController {
     @RequireRole @DeleteMapping("/{nodeId}/assign/{userId}") public R unassign(@PathVariable Long nodeId, @PathVariable Long userId) { service.unassign(nodeId, userId); return R.ok(); }
     /** Stop publishing the node while keeping its record for audit/re-enable. */
     @RequireRole @PostMapping("/{nodeId}/disable") public R disable(@PathVariable Long nodeId) { try { return R.ok(service.disable(nodeId)); } catch (IllegalArgumentException e) { return R.err(e.getMessage()); } }
+    /** Re-enable a previously disabled external node. */
+    @RequireRole @PostMapping("/{nodeId}/enable") public R enable(@PathVariable Long nodeId) { try { return R.ok(service.enable(nodeId)); } catch (IllegalArgumentException e) { return R.err(e.getMessage()); } }
     /** Convert an imported external link into a TMS ingress relay so GOST can account traffic per user. */
     @RequireRole @PostMapping("/{nodeId}/build-metered-relay") public R buildMeteredRelay(@PathVariable Long nodeId, @RequestBody Map<String,Object> body) {
         try {

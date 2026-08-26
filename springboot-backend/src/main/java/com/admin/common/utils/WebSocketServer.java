@@ -23,6 +23,8 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.UUID;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 
 @Slf4j
@@ -54,6 +56,13 @@ public class WebSocketServer extends TextWebSocketHandler {
     private static final ConcurrentHashMap<Long, Boolean> singboxInstalling = new ConcurrentHashMap<>();
     /** 上次安装失败的原因,空表示没失败过 */
     private static final ConcurrentHashMap<Long, String> singboxInstallErr = new ConcurrentHashMap<>();
+    /** Last complete host sample, retained so a newly opened admin page does not miss it. */
+    private static final ConcurrentHashMap<Long, Map<String, Object>> latestSystemInfo = new ConcurrentHashMap<>();
+
+    public static Map<String, Object> getLatestSystemInfo(Long nodeId) {
+        Map<String, Object> sample = nodeId == null ? null : latestSystemInfo.get(nodeId);
+        return sample == null ? null : new LinkedHashMap<>(sample);
+    }
 
     /** 取某节点的 sing-box 运行状态;null 表示未知(该节点还没上报过) */
     public static Boolean getSingboxInstalled(Long nodeId) {
@@ -176,6 +185,15 @@ public class WebSocketServer extends TextWebSocketHandler {
                         }
                         if (info != null && info.containsKey("singbox_running")) {
                             singboxRunning.put(Long.valueOf(id), info.getBooleanValue("singbox_running"));
+                        }
+                        if (info != null && info.containsKey("memory_usage")) {
+                            Map<String, Object> sample = new LinkedHashMap<>();
+                            sample.put("cpu_usage", info.get("cpu_usage"));
+                            sample.put("memory_usage", info.get("memory_usage"));
+                            sample.put("bytes_received", info.get("bytes_received"));
+                            sample.put("bytes_transmitted", info.get("bytes_transmitted"));
+                            sample.put("uptime", info.get("uptime"));
+                            latestSystemInfo.put(Long.valueOf(id), sample);
                         }
                     } catch (Exception ignored) {
                         // 上报格式不对不影响广播,忽略
