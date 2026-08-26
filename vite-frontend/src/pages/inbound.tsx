@@ -43,7 +43,7 @@ export default function InboundPage() {
   const [speedRules, setSpeedRules] = useState<any[]>([]);
   const [customNodes, setCustomNodes] = useState<any[]>([]);
   const [customOpen, setCustomOpen] = useState(false);
-  const [customForm, setCustomForm] = useState<{ name: string; link: string; visibility: "global" | "users"; userIds: string[] }>({ name: "", link: "", visibility: "global", userIds: [] });
+  const [customForm, setCustomForm] = useState<{ name: string; link: string; visibility: "global" | "users"; userIds: string[]; ingressNodeId: number | null; sni: string }>({ name: "", link: "", visibility: "global", userIds: [], ingressNodeId: null, sni: DEFAULT_SNI });
   const [customLoading, setCustomLoading] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -246,10 +246,10 @@ export default function InboundPage() {
     if (customForm.visibility === "users" && customForm.userIds.length === 0) return toast.error("按用户订阅时至少选择一个用户");
     setCustomLoading(true);
     try {
-      const imported = await importCustomNode(customForm.name, customForm.link, customForm.visibility, customForm.userIds.map(Number));
+      const imported = await importCustomNode(customForm.name, customForm.link, customForm.visibility, customForm.userIds.map(Number), customForm.ingressNodeId, cleanSni(customForm.sni));
       if (imported.code !== 0) return toast.error(imported.msg || "导入失败");
-      toast.success("自定义节点已导入");
-      setCustomOpen(false); setCustomForm({ name: "", link: "", visibility: "global", userIds: [] }); loadAll();
+      toast.success(customForm.ingressNodeId ? "已创建套餐计费线路" : "自定义节点已导入");
+      setCustomOpen(false); setCustomForm({ name: "", link: "", visibility: "global", userIds: [], ingressNodeId: null, sni: DEFAULT_SNI }); loadAll();
     } catch (e) { toast.error("导入失败"); }
     finally { setCustomLoading(false); }
   };
@@ -495,6 +495,7 @@ export default function InboundPage() {
             <Input label="显示名称（可空）" value={customForm.name} onChange={(e) => setCustomForm({ ...customForm, name: e.target.value })} />
             <Select
               label="订阅范围"
+              isDisabled={Boolean(customForm.ingressNodeId)}
               selectedKeys={[customForm.visibility]}
               onSelectionChange={(keys) => setCustomForm({ ...customForm, visibility: String(Array.from(keys)[0] || "global") as "global" | "users", userIds: String(Array.from(keys)[0] || "global") === "users" ? customForm.userIds : [] })}
             >
@@ -510,7 +511,34 @@ export default function InboundPage() {
             >
               {users.map((u) => <SelectItem key={String(u.id)}>{u.user}</SelectItem>)}
             </Select>}
-            <p className="text-xs text-default-500">自定义节点仅作为外部订阅来源，不创建中转或计费转发。</p>
+            <Select
+              label="中转出站（转发机）"
+              placeholder="不选：仅导入外部订阅，不计入套餐流量"
+              selectedKeys={customForm.ingressNodeId ? [String(customForm.ingressNodeId)] : []}
+              onSelectionChange={(keys) => {
+                const id = Array.from(keys)[0];
+                // Metered imports are global: their generated TMS endpoints are
+                // automatically assigned to each active package user.
+                setCustomForm({ ...customForm, ingressNodeId: id ? Number(id) : null, visibility: "global", userIds: [] });
+              }}
+            >
+              {nodes.filter((node) => node.status === 1).map((node) => <SelectItem key={String(node.id)}>{node.name}</SelectItem>)}
+            </Select>
+            {customForm.ingressNodeId && <Autocomplete
+              label="伪装域名（Reality）"
+              allowsCustomValue
+              defaultItems={SNI_PRESETS}
+              inputValue={customForm.sni}
+              onInputChange={(value) => setCustomForm({ ...customForm, sni: value })}
+              onSelectionChange={(key) => { if (key) setCustomForm({ ...customForm, sni: String(key) }); }}
+            >
+              {(item: any) => <AutocompleteItem key={item.value}>{item.label}</AutocompleteItem>}
+            </Autocomplete>}
+            <p className="text-xs text-default-500">
+              {customForm.ingressNodeId
+                ? "将自动创建该转发机的套餐计费线路，并分配给所有有效套餐用户；外部原始链接不会保留在自定义节点列表。"
+                : "自定义节点仅作为外部订阅来源，不创建中转或计费转发。"}
+            </p>
           </ModalBody>
           <ModalFooter><Button variant="light" onPress={() => setCustomOpen(false)}>取消</Button><Button color="primary" isLoading={customLoading} onPress={handleImportCustomNode}>导入</Button></ModalFooter>
         </ModalContent>

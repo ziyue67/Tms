@@ -43,8 +43,8 @@ export const getAdminPaymentOrders = () => Network.get("/admin/subscription/orde
 export const retryAdminPaymentOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/retry`);
 export const completeAdminTestOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/complete-test`);
 export const getCustomNodes = () => Network.get("/custom-nodes");
-export const importCustomNode = (name: string, link: string, visibility: "global" | "users" = "global", userIds: number[] = []) =>
-  Network.post("/custom-nodes", { name, link, visibility, userIds });
+export const importCustomNode = (name: string, link: string, visibility: "global" | "users" = "global", userIds: number[] = [], ingressNodeId?: number | null, sni?: string) =>
+  Network.post("/custom-nodes", { name, link, visibility, userIds, ingressNodeId, sni });
 // Custom-node IDs are 64-bit Snowflake values, so the browser must never coerce them
 // to JavaScript numbers. Keep them as strings in URLs and component state.
 export const assignCustomNode = (nodeId: string | number, userId: number) => Network.post(`/custom-nodes/${nodeId}/assign`, { userId });
