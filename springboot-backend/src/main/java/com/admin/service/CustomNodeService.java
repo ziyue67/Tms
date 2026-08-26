@@ -63,14 +63,19 @@ public class CustomNodeService {
         assignments.delete(new QueryWrapper<UserCustomNode>().eq("custom_node_id", nodeId).eq("user_id", userId));
     }
 
-    public void disable(Long nodeId) {
-        CustomNode node = new CustomNode(); node.setId(nodeId); node.setStatus(0); node.setUpdatedTime(System.currentTimeMillis()); nodes.updateById(node);
+    public CustomNode disable(Long nodeId) {
+        CustomNode node = nodes.selectById(nodeId);
+        if (node == null) throw new IllegalArgumentException("自定义节点不存在");
+        node.setStatus(0); node.setUpdatedTime(System.currentTimeMillis());
+        if (nodes.updateById(node) != 1) throw new IllegalArgumentException("停用自定义节点失败");
+        return nodes.selectById(nodeId);
     }
 
     @Transactional
     public void delete(Long nodeId) {
+        if (nodes.selectById(nodeId) == null) throw new IllegalArgumentException("自定义节点不存在");
         assignments.delete(new QueryWrapper<UserCustomNode>().eq("custom_node_id", nodeId));
-        nodes.deleteById(nodeId);
+        if (nodes.deleteById(nodeId) != 1) throw new IllegalArgumentException("删除自定义节点失败");
     }
 
     public List<CustomNode> list() { return nodes.selectList(new QueryWrapper<CustomNode>().orderByDesc("id")); }

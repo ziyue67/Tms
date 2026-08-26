@@ -8,7 +8,7 @@ import { Divider } from "@heroui/divider";
 import { Switch } from "@heroui/switch";
 import { Select, SelectItem } from "@heroui/select";
 import toast from 'react-hot-toast';
-import { getAdminConfigs, updateConfigs } from '@/api';
+import { getAdminConfigs, getAdminEmailHealth, testAdminEmail, updateConfigs } from '@/api';
 import { SettingsIcon } from '@/components/icons';
 
 import { isAdmin } from '@/utils/auth';
@@ -42,6 +42,9 @@ interface ConfigItem {
   dependsOn?: string; // 依赖的配置项key
   dependsValue?: string; // 依赖的配置项值
 }
+
+const DEFAULT_REGISTER_TEMPLATE = '<!DOCTYPE html><html><body style="margin:0;padding:20px;background:#f5f5f5;font-family:Arial,sans-serif"><div style="max-width:600px;margin:auto;background:#fff;border-radius:8px;overflow:hidden"><div style="padding:30px;text-align:center;background:#667eea;color:#fff"><h1>{{app_name}}</h1></div><div style="padding:40px 30px;text-align:center"><h2>邮箱验证码</h2><p>请使用下面的验证码完成注册：</p><div style="padding:16px;background:#f3f4f6;border-radius:6px;font-size:32px;font-weight:bold;letter-spacing:8px">{{code}}</div><p>验证码将在 <strong>{{expires_minutes}} 分钟</strong> 后失效。</p></div><div style="padding:20px;text-align:center;background:#f8f9fa;color:#999;font-size:12px">这是系统自动发送的邮件，请勿直接回复。</div></div></body></html>';
+const DEFAULT_RESET_TEMPLATE = '<!DOCTYPE html><html><body style="margin:0;padding:20px;background:#f5f5f5;font-family:Arial,sans-serif"><div style="max-width:600px;margin:auto;background:#fff;border-radius:8px;overflow:hidden"><div style="padding:30px;text-align:center;background:#667eea;color:#fff"><h1>{{app_name}}</h1></div><div style="padding:40px 30px;text-align:center"><h2>密码重置请求</h2><p>请点击下方按钮设置新密码：</p><p><a href="{{reset_url}}" style="display:inline-block;padding:12px 24px;background:#667eea;color:#fff;text-decoration:none;border-radius:5px">重置密码</a></p><p>该链接将在 <strong>{{expires_minutes}} 分钟</strong> 后失效且只能使用一次。</p></div><div style="padding:20px;text-align:center;background:#f8f9fa;color:#999;font-size:12px">这是系统自动发送的邮件，请勿直接回复。</div></div></body></html>';
 
 // 网站配置项定义
 const CONFIG_ITEMS: ConfigItem[] = [
@@ -200,7 +203,7 @@ export default function ConfigPage() {
       if (response.code !== 0) {
         throw new Error(response.msg || '加载配置失败');
       }
-      const configData = { payment_enabled: 'true', ...(response.data || {}) };
+      const configData = { payment_enabled: 'true', email_register_template: DEFAULT_REGISTER_TEMPLATE, email_reset_template: DEFAULT_RESET_TEMPLATE, ...(response.data || {}) };
       
       // 只有在数据有变化时才更新
       const hasDataChanged = JSON.stringify(configData) !== JSON.stringify(configsToCompare);
@@ -287,6 +290,21 @@ export default function ConfigPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSmtpTest = async () => {
+    const email = window.prompt('输入接收测试邮件的地址');
+    if (!email) return;
+    const response = await testAdminEmail(email.trim());
+    if (response.code === 0) toast.success('测试邮件已发送');
+    else toast.error(response.msg || 'SMTP 测试失败');
+  };
+
+  const handleRedisHealth = async () => {
+    const response = await getAdminEmailHealth();
+    if (response.code !== 0) return toast.error(response.msg || 'Redis 状态检查失败');
+    if (response.data?.redisAvailable) toast.success('Redis 连接正常');
+    else toast.error(response.data?.message || 'Redis 不可用，请检查 REDIS_PASSWORD');
   };
 
 
@@ -434,7 +452,8 @@ export default function ConfigPage() {
                 </p>
               </div>
               <div className="flex gap-2">
-
+                <Button variant="flat" onPress={handleRedisHealth}>检查 Redis</Button>
+                <Button variant="flat" onPress={handleSmtpTest}>测试 SMTP</Button>
                 <Button
                   color="primary"
                   startContent={<SaveIcon className="w-4 h-4" />}

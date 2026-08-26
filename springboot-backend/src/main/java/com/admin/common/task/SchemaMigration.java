@@ -28,6 +28,7 @@ public class SchemaMigration implements ApplicationRunner {
         try (Connection connection = dataSource.getConnection()) {
             Dialect dialect = Dialect.from(connection.getMetaData());
             migrateBaseColumns(connection, dialect);
+            migrateConfigColumns(connection, dialect);
             migrateCommerceTables(connection, dialect);
         }
         log.info("TMS database schema migration completed");
@@ -44,12 +45,36 @@ public class SchemaMigration implements ApplicationRunner {
         createUniqueIndex(c, d, "user", "uk_user_email", "email");
     }
 
+    /** Email HTML templates are substantially larger than the legacy 200-character setting value. */
+    private void migrateConfigColumns(Connection c, Dialect d) throws SQLException {
+        if (!tableExists(c, "vite_config") || textColumn(c, "vite_config", "value")) return;
+        String table = d.q("vite_config");
+        if (d.postgres) execute(c, "ALTER TABLE " + table + " ALTER COLUMN " + d.q("value") + " TYPE TEXT");
+        else execute(c, "ALTER TABLE " + table + " MODIFY COLUMN " + d.q("value") + " TEXT NOT NULL");
+        log.info("Expanded vite_config.value for HTML email templates");
+    }
+
     private void migrateCommerceTables(Connection c, Dialect d) throws SQLException {
         String id = d.identity();
         createTable(c, d, "subscription_plan", "(" +
                 "id " + id + ", name VARCHAR(100) NOT NULL, description VARCHAR(500), price DECIMAL(12,2) NOT NULL DEFAULT 0, currency VARCHAR(10) NOT NULL DEFAULT 'CNY', " +
                 "validity_value INTEGER NOT NULL, validity_unit VARCHAR(10) NOT NULL DEFAULT 'month', traffic_bytes BIGINT NOT NULL DEFAULT 0, reset_day INTEGER NOT NULL DEFAULT 1, reset_quota INTEGER NOT NULL DEFAULT 1, max_forwards INTEGER NOT NULL DEFAULT 0, for_sale INTEGER NOT NULL DEFAULT 1, redeemable INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id))");
+        addColumn(c, d, "subscription_plan", "description", "VARCHAR(500) NULL");
+        addColumn(c, d, "subscription_plan", "price", "DECIMAL(12,2) NOT NULL DEFAULT 0");
+        addColumn(c, d, "subscription_plan", "currency", "VARCHAR(10) NOT NULL DEFAULT 'CNY'");
+        addColumn(c, d, "subscription_plan", "validity_value", "INTEGER NOT NULL DEFAULT 1");
+        addColumn(c, d, "subscription_plan", "validity_unit", "VARCHAR(10) NOT NULL DEFAULT 'month'");
+        addColumn(c, d, "subscription_plan", "traffic_bytes", "BIGINT NOT NULL DEFAULT 0");
+        addColumn(c, d, "subscription_plan", "reset_day", "INTEGER NOT NULL DEFAULT 1");
         addColumn(c, d, "subscription_plan", "reset_quota", "INTEGER NOT NULL DEFAULT 1");
+        addColumn(c, d, "subscription_plan", "max_forwards", "INTEGER NOT NULL DEFAULT 0");
+        addColumn(c, d, "subscription_plan", "for_sale", "INTEGER NOT NULL DEFAULT 1");
+        addColumn(c, d, "subscription_plan", "redeemable", "INTEGER NOT NULL DEFAULT 1");
+        addColumn(c, d, "subscription_plan", "sort_order", "INTEGER NOT NULL DEFAULT 0");
+        addColumn(c, d, "subscription_plan", "status", "INTEGER NOT NULL DEFAULT 1");
+        // Older installations predate the commerce flags and may contain NULLs.
+        // Normalize them once so both MyBatis and the admin UI see deterministic values.
+        normalizePlanColumns(c, d);
         createTable(c, d, "user_subscription", "(" +
                 "id " + id + ", user_id BIGINT NOT NULL, plan_id BIGINT NOT NULL, starts_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, traffic_limit_bytes BIGINT NOT NULL DEFAULT 0, traffic_used_bytes BIGINT NOT NULL DEFAULT 0, next_reset_at BIGINT NULL, max_forwards INTEGER NOT NULL DEFAULT 0, used_forwards INTEGER NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (user_id))");
         createTable(c, d, "redeem_code", "(" +
@@ -68,6 +93,17 @@ public class SchemaMigration implements ApplicationRunner {
         // Before visibility was introduced, only nodes with assignment rows were
         // user-scoped. Preserve that behavior for existing installations.
         execute(c, "UPDATE " + d.q("custom_node") + " n SET " + d.q("visibility") + "='users' WHERE " + d.q("visibility") + "='global' AND EXISTS (SELECT 1 FROM " + d.q("user_custom_node") + " a WHERE a.custom_node_id=n.id AND a.status=1)");
+    }
+
+    private void normalizePlanColumns(Connection c, Dialect d) throws SQLException {
+        if (!tableExists(c, "subscription_plan")) return;
+        String table = d.q("subscription_plan");
+        execute(c, "UPDATE " + table + " SET " + d.q("status") + "=1 WHERE " + d.q("status") + " IS NULL");
+        execute(c, "UPDATE " + table + " SET " + d.q("for_sale") + "=1 WHERE " + d.q("for_sale") + " IS NULL");
+        execute(c, "UPDATE " + table + " SET " + d.q("redeemable") + "=1 WHERE " + d.q("redeemable") + " IS NULL");
+        execute(c, "UPDATE " + table + " SET " + d.q("reset_quota") + "=1 WHERE " + d.q("reset_quota") + " IS NULL");
+        execute(c, "UPDATE " + table + " SET " + d.q("reset_day") + "=1 WHERE " + d.q("reset_day") + " IS NULL");
+        execute(c, "UPDATE " + table + " SET " + d.q("max_forwards") + "=0 WHERE " + d.q("max_forwards") + " IS NULL");
     }
 
     private void addColumn(Connection c, Dialect d, String table, String column, String definition) throws SQLException {
@@ -111,6 +147,21 @@ public class SchemaMigration implements ApplicationRunner {
             if (rs.next()) return true;
         }
         try (ResultSet rs = m.getColumns(c.getCatalog(), c.getSchema(), table.toUpperCase(Locale.ROOT), column.toUpperCase(Locale.ROOT))) { return rs.next(); }
+    }
+
+    private boolean textColumn(Connection c, String table, String column) throws SQLException {
+        DatabaseMetaData m = c.getMetaData();
+        try (ResultSet rs = m.getColumns(c.getCatalog(), c.getSchema(), table, column)) {
+            if (rs.next()) return isTextType(rs.getString("TYPE_NAME"));
+        }
+        try (ResultSet rs = m.getColumns(c.getCatalog(), c.getSchema(), table.toUpperCase(Locale.ROOT), column.toUpperCase(Locale.ROOT))) {
+            return rs.next() && isTextType(rs.getString("TYPE_NAME"));
+        }
+    }
+
+    private boolean isTextType(String typeName) {
+        String type = typeName == null ? "" : typeName.toLowerCase(Locale.ROOT);
+        return type.contains("text") || type.contains("clob") || type.equals("longvarchar");
     }
 
     private boolean indexExists(Connection c, String table, String index) throws SQLException {

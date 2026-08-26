@@ -32,7 +32,10 @@ public class SubscriptionService {
     }
 
     public List<SubscriptionPlan> publicPlans() {
-        return plans.selectList(new QueryWrapper<SubscriptionPlan>().eq("status", 1).eq("for_sale", 1).orderByAsc("sort_order", "id"));
+        return plans.selectList(new QueryWrapper<SubscriptionPlan>()
+                .and(w -> w.isNull("status").or().eq("status", 1))
+                .and(w -> w.isNull("for_sale").or().eq("for_sale", 1))
+                .orderByAsc("sort_order", "id"));
     }
 
     public List<RedeemCode> redeemCodes(Long planId, Integer status) {
@@ -169,7 +172,7 @@ public class SubscriptionService {
     @Transactional
     public UserSubscription activate(long userId, long planId) {
         SubscriptionPlan plan = plans.selectById(planId);
-        if (plan == null || plan.getStatus() == null || plan.getStatus() != 1) throw new IllegalArgumentException("套餐不存在或已停用");
+        if (plan == null || !enabled(plan.getStatus())) throw new IllegalArgumentException("套餐不存在或已停用");
         long now = System.currentTimeMillis();
         UserSubscription old = latest(userId);
         long start = old != null && old.getExpiresAt() != null && old.getExpiresAt() > now ? old.getExpiresAt() : now;
@@ -200,7 +203,7 @@ public class SubscriptionService {
         long now = System.currentTimeMillis();
         if (item == null || (item.getExpiresAt() != null && item.getExpiresAt() > 0 && item.getExpiresAt() < now)) throw new IllegalArgumentException("兑换码无效、已使用或已过期");
         SubscriptionPlan plan = plans.selectById(item.getPlanId());
-        if (plan == null || plan.getStatus() == null || plan.getStatus() != 1 || plan.getRedeemable() == null || plan.getRedeemable() != 1) throw new IllegalArgumentException("该兑换码对应套餐不可兑换");
+        if (plan == null || !enabled(plan.getStatus()) || !enabled(plan.getRedeemable())) throw new IllegalArgumentException("该兑换码对应套餐不可兑换");
         com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<RedeemCode> consume = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<RedeemCode>()
                 .eq("id", item.getId()).eq("status", 1).set("status", 0).set("used_by", userId).set("used_time", now);
         if (codes.update(null, consume) != 1) throw new IllegalArgumentException("兑换码已被使用");
@@ -228,6 +231,8 @@ public class SubscriptionService {
         return month.withDayOfMonth(actualDay).withHour(0).withMinute(0).withSecond(0).withNano(0);
     }
     private long safe(Long value) { return value == null ? 0L : value; }
+    /** NULL flags are from databases created before the commerce migration and mean the old enabled default. */
+    private boolean enabled(Integer value) { return value == null || value == 1; }
     private long number(Object value) {
         if (value == null) throw new IllegalArgumentException("套餐调整参数不能为空");
         try { return Long.parseLong(String.valueOf(value)); }

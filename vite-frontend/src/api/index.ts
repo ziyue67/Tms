@@ -48,6 +48,8 @@ export const unassignCustomNode = (nodeId: number, userId: number) => Network.de
 export const deleteCustomNode = (nodeId: number) => Network.delete(`/custom-nodes/${nodeId}`);
 export const disableCustomNode = (nodeId: number) => Network.post(`/custom-nodes/${nodeId}/disable`);
 export const getAuthConfig = () => Network.get("/auth/config");
+export const testAdminEmail = (email: string) => Network.post("/admin/email/test", { email });
+export const getAdminEmailHealth = () => Network.get("/admin/email/health");
 export const getPaymentOrder = (orderNo: string) => Network.get(`/payment/orders/${orderNo}`);
 export const getMyPaymentOrders = () => Network.get("/payment/orders");
 

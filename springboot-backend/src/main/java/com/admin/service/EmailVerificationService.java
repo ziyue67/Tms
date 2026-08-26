@@ -22,6 +22,12 @@ import java.util.concurrent.ConcurrentHashMap;
 /** 邮箱验证码服务。临时凭据只保存 Redis 摘要，并且只能成功消费一次。 */
 @Service
 public class EmailVerificationService {
+    private static final String REGISTER_TEMPLATE = """
+            <!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:20px;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif"><div style="max-width:600px;margin:auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1)"><div style="padding:30px;text-align:center;background:#667eea;color:#fff"><h1 style="margin:0;font-size:24px">{{app_name}}</h1></div><div style="padding:40px 30px;text-align:center"><h2>邮箱验证码</h2><p>请使用下面的验证码完成注册：</p><div style="margin:24px 0;padding:16px;background:#f3f4f6;border-radius:6px;font-size:32px;font-weight:700;letter-spacing:8px">{{code}}</div><p>验证码将在 <strong>{{expires_minutes}} 分钟</strong> 后失效。</p><p>如果不是你本人操作，请忽略此邮件。</p></div><div style="padding:20px;text-align:center;background:#f8f9fa;color:#999;font-size:12px">这是系统自动发送的邮件，请勿直接回复。</div></div></body></html>
+            """;
+    private static final String RESET_TEMPLATE = """
+            <!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:20px;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif"><div style="max-width:600px;margin:auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1)"><div style="padding:30px;text-align:center;background:#667eea;color:#fff"><h1 style="margin:0;font-size:24px">{{app_name}}</h1></div><div style="padding:40px 30px;text-align:center"><h2>密码重置请求</h2><p>我们收到你的密码重置请求。请点击按钮设置新密码：</p><p style="margin:28px 0"><a href="{{reset_url}}" style="display:inline-block;padding:12px 24px;background:#667eea;color:#fff;text-decoration:none;border-radius:5px">重置密码</a></p><p>该链接将在 <strong>{{expires_minutes}} 分钟</strong> 后失效且只能使用一次。</p><p>如果不是你本人操作，请忽略此邮件。</p></div><div style="padding:20px;text-align:center;background:#f8f9fa;color:#999;font-size:12px">这是系统自动发送的邮件，请勿直接回复。</div></div></body></html>
+            """;
     private static final DefaultRedisScript<Long> CONSUME_SCRIPT = new DefaultRedisScript<>(
             "local value = redis.call('GET', KEYS[1]) " +
             "if not value then return 0 end " +
@@ -89,7 +95,7 @@ public class EmailVerificationService {
             redisPut(key, sha256(code), expiry);
             JavaMailSenderImpl mailSender = createSender();
             String subject = configOr("email_register_subject", "TMS 注册验证码");
-            String content = configOr("email_register_template", "你的 TMS 注册验证码是 {{code}}，有效期 {{expires_minutes}} 分钟。请勿将验证码泄露给他人。");
+            String content = configOr("email_register_template", REGISTER_TEMPLATE);
             sendMessage(mailSender, normalized, render(subject, code, expiry, ""), render(content, code, expiry, ""));
             audit(normalized, purpose, "sent", 0);
         } catch (RuntimeException e) {
@@ -113,7 +119,7 @@ public class EmailVerificationService {
             redisPut(redisKey(Purpose.PASSWORD_RESET, normalized), sha256(token), expiry);
             JavaMailSenderImpl mailSender = createSender();
             String subject = configOr("email_reset_subject", "TMS 密码重置");
-            String content = configOr("email_reset_template", "请点击以下链接重置密码（有效期 {{expires_minutes}} 分钟，使用一次后失效）：\n{{reset_url}}\n\n如果不是你本人操作，请忽略此邮件。");
+            String content = configOr("email_reset_template", RESET_TEMPLATE);
             sendMessage(mailSender, normalized, render(subject, "", expiry, link), render(content, "", expiry, link));
             audit(normalized, Purpose.PASSWORD_RESET, "sent", 0);
         } catch (RuntimeException e) {
@@ -139,6 +145,21 @@ public class EmailVerificationService {
         } catch (Exception ignored) {
             return Collections.emptyList();
         }
+    }
+
+    /** Operational check for administrators. It never exposes the Redis password. */
+    public Map<String, Object> health() {
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("redisConfigured", redis != null);
+        if (redis == null) { result.put("redisAvailable", false); return result; }
+        try (org.springframework.data.redis.connection.RedisConnection connection = redis.getConnectionFactory().getConnection()) {
+            String pong = connection.ping();
+            result.put("redisAvailable", "PONG".equalsIgnoreCase(pong));
+        } catch (Exception e) {
+            result.put("redisAvailable", false);
+            result.put("message", "Redis 无法连接，请检查 REDIS_HOST、REDIS_PORT 和 REDIS_PASSWORD 是否与 Redis 服务一致");
+        }
+        return result;
     }
 
     public boolean consume(String email, String code) {
@@ -169,13 +190,13 @@ public class EmailVerificationService {
             Boolean reserved = redis.opsForValue().setIfAbsent(cooldownKey(purpose, email), "1", java.time.Duration.ofSeconds(Math.max(1, ttlSeconds)));
             return Boolean.TRUE.equals(reserved);
         } catch (Exception e) {
-            throw new IllegalArgumentException("认证服务暂不可用，请稍后重试", e);
+            throw new IllegalArgumentException("认证服务不可用：Redis 无法连接，请检查 REDIS_HOST、REDIS_PORT 和 REDIS_PASSWORD", e);
         }
     }
 
     private void redisPut(String key, String value, long ttlSeconds) {
         if (redis == null) throw new IllegalArgumentException("认证服务暂不可用，请稍后重试");
-        try { redis.opsForValue().set(key, value, java.time.Duration.ofSeconds(Math.max(1, ttlSeconds))); } catch (Exception e) { throw new IllegalArgumentException("认证服务暂不可用，请稍后重试", e); }
+        try { redis.opsForValue().set(key, value, java.time.Duration.ofSeconds(Math.max(1, ttlSeconds))); } catch (Exception e) { throw new IllegalArgumentException("认证服务不可用：Redis 无法连接，请检查 REDIS_HOST、REDIS_PORT 和 REDIS_PASSWORD", e); }
     }
 
     /** Returns null only when Redis is unavailable or the key does not exist. */
@@ -195,7 +216,7 @@ public class EmailVerificationService {
     }
 
     private void requireRedis() {
-        if (redis == null) throw new IllegalArgumentException("认证服务暂不可用，请稍后重试");
+        if (redis == null) throw new IllegalArgumentException("认证服务不可用：Redis 未配置");
     }
 
     private void audit(String email, Purpose purpose, String event, int attempts) {
@@ -219,35 +240,57 @@ public class EmailVerificationService {
         if (host.isBlank()) throw new IllegalArgumentException("SMTP 尚未配置");
         JavaMailSenderImpl sender = new JavaMailSenderImpl();
         sender.setHost(host);
-        try { sender.setPort(Integer.parseInt(configOr("smtp_port", "587"))); } catch (NumberFormatException ignored) { sender.setPort(587); }
+        int port;
+        try { port = Integer.parseInt(configOr("smtp_port", "587")); } catch (NumberFormatException ignored) { port = 587; }
+        if (port < 1 || port > 65535) throw new IllegalArgumentException("SMTP 端口无效");
+        sender.setPort(port);
         String username = config("smtp_username");
         String password = config("smtp_password");
+        if (username.isBlank() || password.isBlank()) throw new IllegalArgumentException("SMTP 用户名和授权码不能为空（QQ 邮箱请填写授权码）");
         if (!username.isBlank()) sender.setUsername(username);
         if (!password.isBlank()) sender.setPassword(password);
+        boolean configuredStartTls = Boolean.parseBoolean(configOr("smtp_starttls", port == 587 ? "true" : "false"));
+        boolean configuredSsl = Boolean.parseBoolean(configOr("smtp_ssl", port == 465 ? "true" : "false"));
+        // QQ and most providers reject the ambiguous combination. Port 465 is implicit TLS;
+        // submission ports 587/25 use STARTTLS. Normalize legacy settings accordingly.
+        boolean ssl = port == 465 || (configuredSsl && port != 587);
+        boolean startTls = !ssl && (configuredStartTls || port == 587);
+        if (ssl && startTls) throw new IllegalArgumentException("SMTP SSL 与 STARTTLS 不能同时启用");
         java.util.Properties props = sender.getJavaMailProperties();
         props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.starttls.enable", configOr("smtp_starttls", "true"));
-        props.put("mail.smtp.ssl.enable", configOr("smtp_ssl", "false"));
+        props.put("mail.smtp.starttls.enable", String.valueOf(startTls));
+        props.put("mail.smtp.starttls.required", String.valueOf(startTls));
+        props.put("mail.smtp.ssl.enable", String.valueOf(ssl));
+        props.put("mail.smtp.ssl.trust", host);
+        props.put("mail.smtp.connectiontimeout", "10000");
+        props.put("mail.smtp.timeout", "20000");
+        props.put("mail.smtp.writetimeout", "20000");
         return sender;
     }
 
     private void sendMessage(JavaMailSenderImpl sender, String recipient, String subject, String content) {
         try {
             MimeMessageHelper message = new MimeMessageHelper(sender.createMimeMessage(), false, "UTF-8");
-            message.setTo(recipient); message.setSubject(subject); message.setText(content, false);
+            message.setTo(recipient); message.setSubject(subject); message.setText(content, isHtml(content));
             String from = config("smtp_from");
             String fromName = config("smtp_from_name");
+            if (from.isBlank()) from = config("smtp_username");
+            if (from.isBlank()) throw new IllegalArgumentException("发件人地址不能为空");
             if (!from.isBlank()) {
                 if (fromName.isBlank()) message.setFrom(from);
                 else message.setFrom(from, fromName);
             }
             sender.send(message.getMimeMessage());
         } catch (Exception error) {
-            throw new IllegalArgumentException("邮件发送失败，请检查 SMTP 配置", error);
+            Throwable root = error;
+            while (root.getCause() != null) root = root.getCause();
+            String detail = root.getMessage() == null ? root.getClass().getSimpleName() : root.getMessage().replaceAll("(?i)(password|token|authorization)=[^,\\s]+", "$1=***");
+            throw new IllegalArgumentException("邮件发送失败：" + detail, error);
         }
     }
 
     private String config(String name) { return configOr(name, ""); }
+    private boolean isHtml(String content) { return content != null && content.trim().toLowerCase(java.util.Locale.ROOT).startsWith("<!doctype html"); }
     private String render(String template, String code, long expiry, String resetUrl) {
         String appName = configOr("app_name", "TMS");
         return template.replace("{{code}}", code == null ? "" : code)
@@ -257,7 +300,8 @@ public class EmailVerificationService {
     }
     private String configOr(String name, String fallback) {
         ViteConfig value = configs.getOne(new QueryWrapper<ViteConfig>().eq("name", name));
-        return value == null || value.getValue() == null ? fallback : value.getValue().trim();
+        if (value == null || value.getValue() == null || value.getValue().trim().isEmpty()) return fallback;
+        return value.getValue().trim();
     }
     private long secondsConfig(String name, long fallback, long min, long max) {
         try { return Math.max(min, Math.min(max, Long.parseLong(configOr(name, String.valueOf(fallback))))); }

@@ -23,7 +23,7 @@ public class CustomNodeController {
     @RequireRole @PostMapping("/{nodeId}/assign") public R assign(@PathVariable Long nodeId, @RequestBody Map<String,Object> body) { try { service.assign(nodeId, Long.valueOf(String.valueOf(body.get("userId")))); return R.ok(); } catch (IllegalArgumentException e) { return R.err(e.getMessage()); } }
     @RequireRole @DeleteMapping("/{nodeId}/assign/{userId}") public R unassign(@PathVariable Long nodeId, @PathVariable Long userId) { service.unassign(nodeId, userId); return R.ok(); }
     /** Stop publishing the node while keeping its record for audit/re-enable. */
-    @RequireRole @PostMapping("/{nodeId}/disable") public R disable(@PathVariable Long nodeId) { service.disable(nodeId); return R.ok(); }
+    @RequireRole @PostMapping("/{nodeId}/disable") public R disable(@PathVariable Long nodeId) { try { return R.ok(service.disable(nodeId)); } catch (IllegalArgumentException e) { return R.err(e.getMessage()); } }
     /** Permanently remove the imported link and its legacy assignment rows. */
-    @RequireRole @DeleteMapping("/{nodeId}") public R delete(@PathVariable Long nodeId) { service.delete(nodeId); return R.ok(); }
+    @RequireRole @DeleteMapping("/{nodeId}") public R delete(@PathVariable Long nodeId) { try { service.delete(nodeId); return R.ok(); } catch (IllegalArgumentException e) { return R.err(e.getMessage()); } }
 }
