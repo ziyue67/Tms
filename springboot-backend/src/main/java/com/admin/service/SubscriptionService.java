@@ -98,6 +98,13 @@ public class SubscriptionService {
     }
 
     @Transactional
+    public void remove(long userId) {
+        UserSubscription item = latest(userId);
+        if (item == null) throw new IllegalArgumentException("该用户没有套餐记录");
+        if (subscriptions.deleteById(item.getId()) != 1) throw new IllegalArgumentException("删除用户套餐失败");
+    }
+
+    @Transactional
     public UserSubscription resetQuota(long userId) {
         UserSubscription item = latest(userId);
         if (item == null) throw new IllegalArgumentException("该用户没有有效套餐");

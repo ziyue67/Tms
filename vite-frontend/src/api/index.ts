@@ -37,6 +37,7 @@ export const revokeRedeemCode = (id: string) => Network.post(`/admin/subscriptio
 export const getAdminSubscriptionUser = (userId: string) => Network.get(`/admin/subscription/users/${userId}`);
 export const getAdminSubscriptionAudit = (userId: string) => Network.get(`/admin/subscription/users/${userId}/audit`);
 export const adjustAdminSubscriptionUser = (userId: string, data: any) => Network.put(`/admin/subscription/users/${userId}`, data);
+export const deleteAdminSubscriptionUser = (userId: string) => Network.delete(`/admin/subscription/users/${userId}`);
 export const resetAdminSubscriptionQuota = (userId: string) => Network.post(`/admin/subscription/users/${userId}/reset-quota`);
 export const getAdminPaymentOrders = () => Network.get("/admin/subscription/orders");
 export const retryAdminPaymentOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/retry`);
