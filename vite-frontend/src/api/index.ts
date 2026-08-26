@@ -43,8 +43,8 @@ export const getAdminPaymentOrders = () => Network.get("/admin/subscription/orde
 export const retryAdminPaymentOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/retry`);
 export const completeAdminTestOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/complete-test`);
 export const getCustomNodes = () => Network.get("/custom-nodes");
-export const importCustomNode = (name: string, link: string, visibility: "global" | "users" = "global", userIds: number[] = [], ingressNodeId?: number | null, sni?: string) =>
-  Network.post("/custom-nodes", { name, link, visibility, userIds, ingressNodeId, sni, provisionSubscribedUsers: true });
+export const importCustomNode = (name: string, link: string, visibility: "global" | "users" = "global", userIds: number[] = []) =>
+  Network.post("/custom-nodes", { name, link, visibility, userIds });
 export const assignCustomNode = (nodeId: number, userId: number) => Network.post(`/custom-nodes/${nodeId}/assign`, { userId });
 export const unassignCustomNode = (nodeId: number, userId: number) => Network.delete(`/custom-nodes/${nodeId}/assign/${userId}`);
 export const deleteCustomNode = (nodeId: number) => Network.delete(`/custom-nodes/${nodeId}`);
@@ -121,8 +121,6 @@ export const deleteInboundsByNode = (nodeId: number, relay?: boolean, landingId?
 export const assignInboundUser = (data: any) => Network.post("/inbound/assign", data);
 export const assignAllToUser = (data: any) => Network.post("/inbound/assign-all", data);
 export const provisionSubscribedUsers = (nodeId: number) => Network.post("/inbound/provision-subscribed-users", { nodeId });
-export const buildMeteredCustomRelay = (customNodeId: number, ingressNodeId: number, sni?: string) =>
-  Network.post(`/custom-nodes/${customNodeId}/build-metered-relay`, { ingressNodeId, sni, provisionSubscribedUsers: true });
 // 「我自己用」:把这台机器/这条中转的协议开给当前登录的管理员自己(不限速/不限量/不到期)
 export const assignSelf = (data: any) => Network.post("/inbound/assign-self", data);
 export const unassignInboundUser = (id: number) => Network.post("/inbound/unassign", { id });
