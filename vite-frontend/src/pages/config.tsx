@@ -209,6 +209,7 @@ export default function ConfigPage() {
   const [originalConfigs, setOriginalConfigs] = useState<Record<string, string>>(initialConfigs);
   const [activeSection, setActiveSection] = useState<ConfigSection>('general');
   const [testRecipient, setTestRecipient] = useState('');
+  const [emailTemplateEvent, setEmailTemplateEvent] = useState<'register' | 'reset'>('register');
 
   // 权限检查
   useEffect(() => {
@@ -354,6 +355,34 @@ export default function ConfigPage() {
     return key.startsWith('payment_') ? 'payment' : 'email';
   };
 
+  const emailTemplate = emailTemplateEvent === 'register'
+    ? {
+        label: '邮箱验证码',
+        description: '用于注册验证码邮件。',
+        subjectKey: 'email_register_subject',
+        contentKey: 'email_register_template',
+        defaultSubject: 'TMS 注册验证码',
+        defaultContent: DEFAULT_REGISTER_TEMPLATE,
+      }
+    : {
+        label: '密码重置',
+        description: '用于密码重置的一次性链接邮件。',
+        subjectKey: 'email_reset_subject',
+        contentKey: 'email_reset_template',
+        defaultSubject: 'TMS 密码重置',
+        defaultContent: DEFAULT_RESET_TEMPLATE,
+      };
+
+  const emailPreview = (configs[emailTemplate.contentKey] || emailTemplate.defaultContent)
+    .replace(/{{app_name}}/g, configs.app_name || 'TMS')
+    .replace(/{{code}}/g, '123456')
+    .replace(/{{expires_minutes}}/g, String(Math.max(1, Math.round(Number(configs.email_code_expire_seconds || 600) / 60))))
+    .replace(/{{reset_url}}/g, 'https://example.com/reset-password?token=example');
+
+  const insertTemplateVariable = (variable: string) => {
+    handleConfigChange(emailTemplate.contentKey, `${configs[emailTemplate.contentKey] || emailTemplate.defaultContent}${variable}`);
+  };
+
   // 渲染不同类型的配置项
   const renderConfigItem = (item: ConfigItem) => {
     const isChanged = hasChanges && configs[item.key] !== originalConfigs[item.key];
@@ -457,7 +486,9 @@ export default function ConfigPage() {
   }
 
   const activeConfigItems = CONFIG_ITEMS.filter((item) =>
-    sectionFor(item.key) === activeSection && shouldShowItem(item)
+    sectionFor(item.key) === activeSection
+      && shouldShowItem(item)
+      && !(activeSection === 'email' && ['email_register_subject', 'email_register_template', 'email_reset_subject', 'email_reset_template'].includes(item.key))
   );
   const activeSectionInfo = CONFIG_SECTIONS.find((section) => section.key === activeSection)!;
 
@@ -475,13 +506,15 @@ export default function ConfigPage() {
           </div>
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-2 border-b border-divider pb-3" role="tablist" aria-label="网站配置分类">
+        <div className="mb-5 overflow-x-auto rounded-lg border border-divider bg-content1 p-1 shadow-sm" role="tablist" aria-label="网站配置分类">
+          <div className="flex min-w-max gap-1">
           {CONFIG_SECTIONS.map((section) => (
             <Button
               key={section.key}
               size="sm"
-              variant={activeSection === section.key ? 'solid' : 'flat'}
+              variant={activeSection === section.key ? 'flat' : 'light'}
               color={activeSection === section.key ? 'primary' : 'default'}
+              className={activeSection === section.key ? 'font-semibold' : 'text-default-600'}
               onPress={() => setActiveSection(section.key)}
               role="tab"
               aria-selected={activeSection === section.key}
@@ -489,6 +522,7 @@ export default function ConfigPage() {
               {section.label}
             </Button>
           ))}
+          </div>
         </div>
 
         {activeSection === 'general' && <Card className="mb-4 shadow-md">
@@ -542,6 +576,7 @@ export default function ConfigPage() {
               const isLastItem = index === activeConfigItems.length - 1;
               const paymentGroupTitle = activeSection === 'payment' ? PAYMENT_GROUP_TITLES[item.key] : undefined;
 
+              const compactSwitch = item.type === 'switch';
               return (
                 <div key={item.key} className="space-y-3">
                   {paymentGroupTitle && (
@@ -549,19 +584,20 @@ export default function ConfigPage() {
                       <h3 className="text-base font-semibold">{paymentGroupTitle}</h3>
                     </div>
                   )}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {item.label}
-                    </label>
-                    {item.description && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {item.description}
-                      </p>
-                    )}
+                  <div className={compactSwitch ? 'flex items-center justify-between gap-5' : 'flex flex-col gap-1'}>
+                    <div className="min-w-0">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {item.label}
+                      </label>
+                      {item.description && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {item.description}
+                        </p>
+                      )}
+                    </div>
+                    {compactSwitch && <div className="shrink-0">{renderConfigItem(item)}</div>}
                   </div>
-                  
-                  {/* 渲染配置项 */}
-                  {renderConfigItem(item)}
+                  {!compactSwitch && renderConfigItem(item)}
                   
                   {/* 分隔线 */}
                   {!isLastItem && (
@@ -571,7 +607,53 @@ export default function ConfigPage() {
               );
             })}
             {activeSection === 'email' && (
-              <div className="border-t border-divider pt-5 space-y-3">
+              <div className="border-t border-divider pt-5 space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-base font-semibold">邮件模板</h3>
+                  <p className="text-sm text-default-500">选择事件后编辑主题与 HTML 内容，预览不会发送邮件。</p>
+                </div>
+                <Select
+                  label="邮件事件"
+                  selectedKeys={[emailTemplateEvent]}
+                  onSelectionChange={(keys) => setEmailTemplateEvent(Array.from(keys)[0] as 'register' | 'reset')}
+                >
+                  <SelectItem key="register">邮箱验证码</SelectItem>
+                  <SelectItem key="reset">密码重置</SelectItem>
+                </Select>
+                <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-default-700">
+                  <span className="font-medium">{emailTemplate.label}</span>
+                  <span className="ml-2 text-default-500">{emailTemplate.description}</span>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-3">
+                    <Input
+                      label="邮件主题"
+                      value={configs[emailTemplate.subjectKey] || emailTemplate.defaultSubject}
+                      onChange={(event) => handleConfigChange(emailTemplate.subjectKey, event.target.value)}
+                      variant="bordered"
+                    />
+                    <Textarea
+                      label="HTML 模板"
+                      minRows={14}
+                      value={configs[emailTemplate.contentKey] || emailTemplate.defaultContent}
+                      onChange={(event) => handleConfigChange(emailTemplate.contentKey, event.target.value)}
+                      variant="bordered"
+                      classNames={{ input: 'font-mono text-xs' }}
+                    />
+                    <div className="rounded-md border border-divider p-3">
+                      <p className="mb-2 text-xs text-default-500">可插入变量</p>
+                      <div className="flex flex-wrap gap-2">
+                        {['{{app_name}}', '{{code}}', '{{expires_minutes}}', '{{reset_url}}'].map((variable) => (
+                          <Button key={variable} size="sm" variant="flat" onPress={() => insertTemplateVariable(variable)}>{variable}</Button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="overflow-hidden rounded-md border border-divider bg-default-100 p-3">
+                    <p className="mb-2 text-sm font-medium">实时预览</p>
+                    <iframe title="邮件模板预览" sandbox="" srcDoc={emailPreview} className="h-[520px] w-full rounded border border-divider bg-white" />
+                  </div>
+                </div>
                 <div>
                   <h3 className="text-base font-semibold">发送测试邮件</h3>
                   <p className="text-sm text-default-500">保存 SMTP 配置后，向指定邮箱发送一封验证邮件。</p>
