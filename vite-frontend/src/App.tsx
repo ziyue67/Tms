@@ -17,6 +17,7 @@ import MySubPage from "@/pages/my-sub";
 import ConfigPage from "@/pages/config";
 import RegisterPage from "@/pages/register";
 import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 import AdminSubscriptionPage from "@/pages/admin-subscription";
 import UserSubscriptionDashboardPage from "@/pages/user-subscription-dashboard";
 import PurchasePage from "@/pages/purchase";
@@ -161,6 +162,7 @@ function App() {
       <Route path="/" element={<LoginRoute />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/subscription" element={<ProtectedRoute><Navigate to="/purchase" replace /></ProtectedRoute>} />
       <Route path="/purchase" element={<ProtectedRoute><PurchasePage /></ProtectedRoute>} />
       <Route path="/redeem" element={<ProtectedRoute><RedeemPage /></ProtectedRoute>} />

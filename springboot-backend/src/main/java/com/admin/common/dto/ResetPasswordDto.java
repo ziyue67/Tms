@@ -11,9 +11,17 @@ import javax.validation.constraints.Size;
 public class ResetPasswordDto {
     @NotBlank @Email
     private String email;
-    @NotBlank @Size(min = 6, max = 72)
+    /** Legacy six-digit verification code. */
+    @Size(min = 6, max = 256)
     private String code;
-    @NotBlank @Size(min = 6, max = 72)
+    /** sub2api-compatible one-time reset token from the email link. */
+    @Size(min = 16, max = 256)
+    private String token;
+    @javax.validation.constraints.NotBlank @Size(min = 6, max = 72)
     @JsonAlias({"new_password", "password"})
     private String newPassword;
+
+    public String credential() {
+        return token != null && !token.isBlank() ? token.trim() : code;
+    }
 }

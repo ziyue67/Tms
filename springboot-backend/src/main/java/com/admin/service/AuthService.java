@@ -54,7 +54,8 @@ public class AuthService {
         String email = EmailVerificationService.normalize(dto.getEmail());
         User user = users.getOne(new QueryWrapper<User>().eq("email", email));
         // Do not reveal whether the email exists or whether a code was valid.
-        if (user == null || !verification.consume(email, dto.getCode(), EmailVerificationService.Purpose.PASSWORD_RESET)) {
+        String credential = dto.credential();
+        if (credential == null || credential.isBlank() || user == null || !verification.consume(email, credential, EmailVerificationService.Purpose.PASSWORD_RESET)) {
             return R.err("验证码错误或已过期");
         }
         user.setPwd(passwordEncoder.encode(dto.getNewPassword()));
