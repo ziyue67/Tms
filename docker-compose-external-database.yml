@@ -1,0 +1,19 @@
+# Use with docker-compose-v4.yml or docker-compose-v6.yml when DB_URL points
+# to an external MySQL or PostgreSQL database. The bundled MySQL service is
+# disabled, but bundled Redis remains available unless REDIS_URL is also set.
+#
+# docker compose -f docker-compose-v4.yml -f docker-compose-external-database.yml --env-file .env up -d
+services:
+  mysql:
+    profiles: [disabled]
+  backend:
+    environment:
+      DB_DRIVER: ${DB_DRIVER:-com.mysql.cj.jdbc.Driver}
+      DB_URL: ${DB_URL:?Set DB_URL to the external JDBC URL}
+      DB_USER: ${DB_USER:?Set DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      MYBATIS_TABLE_FORMAT: ${MYBATIS_TABLE_FORMAT:-}
+      MYBATIS_COLUMN_FORMAT: ${MYBATIS_COLUMN_FORMAT:-}
+    depends_on: !override
+      redis:
+        condition: service_healthy

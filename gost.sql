@@ -145,7 +145,7 @@ CREATE TABLE `user` (
   `user` varchar(100) NOT NULL,
   `pwd` varchar(100) NOT NULL,
   `role_id` int(10) NOT NULL,
-  `exp_time` bigint(20) NOT NULL,
+  `exp_time` bigint(20) NOT NULL DEFAULT '0',
   `flow` bigint(20) NOT NULL,
   `in_flow` bigint(20) NOT NULL DEFAULT '0',
   `out_flow` bigint(20) NOT NULL DEFAULT '0',

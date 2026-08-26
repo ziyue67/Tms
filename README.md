@@ -101,6 +101,8 @@ MySQL 外部库先导入 `gost.sql`，再导入 `springboot-backend/src/main/res
 
 如果外部数据库限制容器网段访问，请把 TMS 主机地址加入白名单，并放行数据库端口；Compose 本身不会创建或删除外部数据库。
 
+一键安装也支持外部数据库：在首次执行脚本前设置 `DB_URL`、`DB_USER`、`DB_PASSWORD`，PostgreSQL 额外设置 `DB_DRIVER=org.postgresql.Driver`。脚本会把连接信息写入 `.env`，生成覆盖配置禁用内置 MySQL，因此不会拉取或启动仓库的 MySQL 镜像；后续执行 `tms update` 会保留此设置。单独使用主 Compose 文件时，可叠加 `-f docker-compose-external-database.yml`。`REDIS_URL` 和 `DB_URL` 可同时设置，两个内置服务都会被禁用。
+
 <br>
 
 ### 第一步 · 装面板端

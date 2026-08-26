@@ -420,38 +420,107 @@ get_config_params() {
 
   echo "   前端端口：$FRONTEND_PORT   后端端口：$BACKEND_PORT"
 
-  DB_NAME=$(generate_random)
-  DB_USER=$(generate_random)
-  DB_PASSWORD=$(generate_random)
-  JWT_SECRET=$(generate_random)
+  if [ -n "${DB_URL:-}" ]; then
+    : "${DB_USER:?设置 DB_URL 时必须同时设置 DB_USER}"
+    : "${DB_PASSWORD:?设置 DB_URL 时必须同时设置 DB_PASSWORD}"
+    DB_NAME="${DB_NAME:-external}"
+    echo "   ✔ 检测到 DB_URL，将使用外部数据库"
+  else
+    DB_NAME=$(generate_random)
+    DB_USER=$(generate_random)
+    DB_PASSWORD=$(generate_random)
+  fi
+  JWT_SECRET=${JWT_SECRET:-$(generate_random)}
 }
 
-# REDIS_URL is a standard Redis URI, for example:
-# redis://:password@redis.example.com:6379/0
-# Keep this override separate from docker-compose.yml because update_panel
-# refreshes the latter from GitHub on every update.
-configure_external_redis() {
+# Keep this generated override separate from docker-compose.yml because
+# update_panel refreshes the latter from GitHub on every update.
+configure_external_services() {
   local redis_url="${REDIS_URL:-}"
+  local db_url="${DB_URL:-}"
   if [ -z "$redis_url" ] && [ -f .env ]; then
     redis_url="$(sed -n 's/^REDIS_URL=//p' .env | tail -n 1)"
   fi
+  if [ -z "$db_url" ] && [ -f .env ]; then
+    db_url="$(sed -n 's/^DB_URL=//p' .env | tail -n 1)"
+  fi
 
-  if [ -n "$redis_url" ]; then
-    sed -i '/^REDIS_URL=/d' .env
-    printf 'REDIS_URL=%s\n' "$redis_url" >> .env
+  if [ -n "$redis_url" ] || [ -n "$db_url" ]; then
+    if [ -n "$redis_url" ]; then
+      sed -i '/^REDIS_URL=/d' .env
+      printf 'REDIS_URL=%s\n' "$redis_url" >> .env
+    fi
+    if [ -n "$db_url" ]; then
+      local driver="${DB_DRIVER:-}"
+      if [ -z "$driver" ] && [ -f .env ]; then
+        driver="$(sed -n 's/^DB_DRIVER=//p' .env | tail -n 1)"
+      fi
+      case "$db_url" in
+        jdbc:postgresql:*)
+          if ! grep -q '^MYBATIS_TABLE_FORMAT=.' .env; then
+            printf "MYBATIS_TABLE_FORMAT='\"%%s\"'\nMYBATIS_COLUMN_FORMAT='\"%%s\"'\n" >> .env
+          fi
+          [ -n "$driver" ] || driver="org.postgresql.Driver"
+          ;;
+        jdbc:mysql:*) [ -n "$driver" ] || driver="com.mysql.cj.jdbc.Driver" ;;
+        *) echo "错误：DB_URL 必须是 jdbc:mysql: 或 jdbc:postgresql: 格式"; return 1 ;;
+      esac
+      if ! grep -q '^DB_USER=.' .env || ! grep -q '^DB_PASSWORD=.' .env; then
+        echo "错误：外部数据库必须在 .env 中设置 DB_USER 和 DB_PASSWORD"
+        return 1
+      fi
+      sed -i '/^DB_URL=/d;/^DB_DRIVER=/d' .env
+      printf 'DB_URL=%s\nDB_DRIVER=%s\n' "$db_url" "$driver" >> .env
+    fi
+
     cat > docker-compose.override.yml <<'EOF'
-# TMS_EXTERNAL_REDIS_OVERRIDE
-# REDIS_URL is set in .env. Do not start or pull the bundled Redis service.
+# TMS_EXTERNAL_SERVICE_OVERRIDE
+# Generated from DB_URL and REDIS_URL in .env. Do not edit manually.
 services:
+EOF
+    if [ -n "$redis_url" ]; then
+      cat >> docker-compose.override.yml <<'EOF'
   redis:
     profiles: [disabled]
+EOF
+    fi
+    if [ -n "$db_url" ]; then
+      cat >> docker-compose.override.yml <<'EOF'
+  mysql:
+    profiles: [disabled]
+EOF
+    fi
+    cat >> docker-compose.override.yml <<'EOF'
   backend:
+EOF
+    if [ -n "$db_url" ]; then
+      cat >> docker-compose.override.yml <<'EOF'
+    environment:
+      DB_DRIVER: ${DB_DRIVER:?Set DB_DRIVER to com.mysql.cj.jdbc.Driver or org.postgresql.Driver}
+      DB_URL: ${DB_URL:?Set DB_URL to the external JDBC URL}
+      DB_USER: ${DB_USER:?Set DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      MYBATIS_TABLE_FORMAT: ${MYBATIS_TABLE_FORMAT:-}
+      MYBATIS_COLUMN_FORMAT: ${MYBATIS_COLUMN_FORMAT:-}
+EOF
+    fi
+    if [ -n "$redis_url" ]; then
+      cat >> docker-compose.override.yml <<'EOF'
     depends_on: !reset []
 EOF
-    echo "   ✔ 检测到 REDIS_URL，使用外部 Redis，不启动本地 Redis 容器"
-  elif [ -f docker-compose.override.yml ] && grep -q 'TMS_EXTERNAL_REDIS_OVERRIDE' docker-compose.override.yml; then
+    elif [ -n "$db_url" ]; then
+      cat >> docker-compose.override.yml <<'EOF'
+    depends_on: !override
+      redis:
+        condition: service_healthy
+EOF
+    fi
+
+    [ -n "$redis_url" ] && echo "   ✔ 检测到 REDIS_URL，使用外部 Redis，不启动本地 Redis 容器"
+    [ -n "$db_url" ] && echo "   ✔ 检测到 DB_URL，使用外部数据库，不启动本地 MySQL 容器"
+  elif [ -f docker-compose.override.yml ] && grep -q 'TMS_EXTERNAL_.*_OVERRIDE' docker-compose.override.yml; then
     rm -f docker-compose.override.yml
-    echo "   ℹ 未设置 REDIS_URL，恢复内置 Redis 配置"
+    echo "   ℹ 未设置外部数据库或 Redis，恢复内置服务配置"
   fi
 }
 
@@ -488,7 +557,11 @@ FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
 EOF
 
-  configure_external_redis
+  if [ -n "${DB_URL:-}" ]; then
+    printf 'DB_URL=%s\nDB_DRIVER=%s\n' "$DB_URL" "${DB_DRIVER:-}" >> .env
+  fi
+
+  configure_external_services
 
   # 清理上一次失败/中断留下的旧容器与数据卷。
   # 关键坑:MySQL 初始化中断过一次后,mysql_data 卷里会残留半拉子文件,
@@ -571,7 +644,7 @@ update_panel() {
   if curl -fsSL -o docker-compose.yml.new "$DOCKER_COMPOSE_URL" && grep -q "services:" docker-compose.yml.new; then
     mv -f docker-compose.yml.new docker-compose.yml
     normalize_tms_subnet || { echo "      ✘ 网段校正失败,停止更新以保护现有服务"; return 1; }
-    configure_external_redis
+    configure_external_services
     echo "      ✔ 配置文件已更新"
   else
     rm -f docker-compose.yml.new
@@ -585,7 +658,7 @@ update_panel() {
   fi
 
   echo "🛑 停止当前服务..."
-  $DOCKER_CMD down
+  $DOCKER_CMD down --remove-orphans
   remove_unused_tms_network
 
   echo "⬇️ 拉取最新镜像..."

@@ -79,9 +79,12 @@ public class AuthService {
         user.setPwd(passwordEncoder.encode(dto.getPassword()));
         user.setRoleId(1);
         user.setStatus(1);
+        // Legacy MySQL schemas require this non-null field; 0 means no expiry.
+        user.setExpTime(0L);
         user.setFlow(0L);
         user.setInFlow(0L);
         user.setOutFlow(0L);
+        user.setFlowResetTime(1L);
         user.setNum(0);
         user.setCreatedTime(System.currentTimeMillis());
         user.setUpdatedTime(System.currentTimeMillis());
