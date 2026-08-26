@@ -454,3 +454,17 @@ CREATE TABLE IF NOT EXISTS `inbound_line` (
   KEY `idx_line_user` (`user_id`),
   KEY `idx_line_user_node` (`user_id`, `node_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Automatic assignment targets. landing_id=0 is a direct protocol group;
+-- a nonzero landing_id is one relay line. Existing package users are filled
+-- immediately when an administrator enables a target.
+CREATE TABLE IF NOT EXISTS `inbound_auto_provision` (
+  `id`           bigint(20) NOT NULL AUTO_INCREMENT,
+  `node_id`      bigint(20) NOT NULL,
+  `landing_id`   bigint(20) NOT NULL DEFAULT 0,
+  `enabled`      tinyint(1) NOT NULL DEFAULT 1,
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_auto_provision_target` (`node_id`, `landing_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

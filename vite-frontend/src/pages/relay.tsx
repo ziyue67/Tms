@@ -5,6 +5,7 @@ import { Input, Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Chip } from "@heroui/chip";
+import { Switch } from "@heroui/switch";
 import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
 import { DatePicker } from "@heroui/date-picker";
 import { parseDate } from "@internationalized/date";
@@ -17,11 +18,12 @@ import {
   assignAllToUser,
   assignSelf,
   provisionSubscribedUsersRelay,
+  getAutoProvisionTargets,
+  setAutoProvisionTarget,
   getNodeList,
   getAllUsers,
   getSpeedLimitList,
   getLandingList,
-  renameNode,
   renameLanding,
 } from "@/api";
 import { copyTextToClipboard } from "@/utils/clipboard";
@@ -50,9 +52,11 @@ export default function RelayPage() {
   const [assignForm, setAssignForm] = useState<any>({ nodeId: null, nodeName: "", protocolCount: 0, userId: null, speedId: null, expDate: null, flowGb: null });
   const [assignLoading, setAssignLoading] = useState(false);
   const [globalProvisioning, setGlobalProvisioning] = useState<string | null>(null);
+  const [autoTargets, setAutoTargets] = useState<any[]>([]);
+  const [autoProvisionLoading, setAutoProvisionLoading] = useState<string | null>(null);
 
   const [renameOpen, setRenameOpen] = useState(false);
-  const [renameForm, setRenameForm] = useState<any>({ nodeId: null, landingId: null, nodeName: "", landingName: "", originalNodeName: "", originalLandingName: "" });
+  const [renameForm, setRenameForm] = useState<any>({ landingId: null, landingName: "", originalLandingName: "" });
   const [renameLoading, setRenameLoading] = useState(false);
 
   // 「我自己用」:一键把这条中转开给当前管理员自己,完事直接弹订阅链接
@@ -83,12 +87,13 @@ export default function RelayPage() {
 
   const loadAll = async () => {
     try {
-      const [ib, nd, us, sp, ld] = await Promise.all([
+      const [ib, nd, us, sp, ld, at] = await Promise.all([
         getInboundList(),
         getNodeList(),
         getAllUsers(),
         getSpeedLimitList(),
         getLandingList(),
+        getAutoProvisionTargets(),
       ]);
       if (ib.code === 0) setInbounds(ib.data || []);
       if (nd.code === 0) setNodes(nd.data || []);
@@ -98,6 +103,7 @@ export default function RelayPage() {
       }
       if (sp.code === 0) setSpeedRules(sp.data || []);
       if (ld.code === 0) setLandings(ld.data || []);
+      if (at.code === 0) setAutoTargets(at.data || []);
     } catch (e) {
       toast.error("加载失败");
     }
@@ -212,41 +218,61 @@ export default function RelayPage() {
     }
   };
 
-  const openRename = (node: any, landing: any) => {
+  const isAutoProvisionEnabled = (nodeId: number, landingId: number) => autoTargets.some(
+    (target) => Number(target.nodeId) === Number(nodeId) && Number(target.landingId || 0) === Number(landingId) && Number(target.enabled) === 1,
+  );
+
+  const handleAutoProvisionTarget = async (nodeId: number, landingId: number, relayName: string, enabled: boolean) => {
+    const key = `${nodeId}-${landingId}`;
+    setAutoProvisionLoading(key);
+    try {
+      const response = await setAutoProvisionTarget(nodeId, landingId, enabled);
+      if (response.code !== 0) {
+        toast.error(response.msg || "自动分配设置失败");
+        return;
+      }
+      if (enabled) {
+        const errors = Array.isArray(response.data?.errors) ? response.data.errors : [];
+        if (errors.length) toast.error(`自动分配已开启；${response.data?.provisionedUsers || 0} 个现有用户已开通，${errors.length} 个失败`);
+        else toast.success(`已开启「${relayName}」自动分配，${response.data?.provisionedUsers || 0} 个现有套餐用户已开通`);
+      } else {
+        toast.success(`已关闭「${relayName}」自动分配；已分配用户不会受影响`);
+      }
+      await loadAll();
+    } catch (error) {
+      toast.error("自动分配设置失败");
+    } finally {
+      setAutoProvisionLoading(null);
+    }
+  };
+
+  const openRename = (landing: any) => {
     if (!landing?.id) {
       toast.error("落地记录不存在，无法编辑名称");
       return;
     }
     setRenameForm({
-      nodeId: node.id,
       landingId: landing.id,
-      nodeName: node.name || "",
       landingName: landing.name || "",
-      originalNodeName: node.name || "",
       originalLandingName: landing.name || "",
     });
     setRenameOpen(true);
   };
 
   const handleRename = async () => {
-    const nodeName = String(renameForm.nodeName || "").trim();
     const landingName = String(renameForm.landingName || "").trim();
-    if (!landingName) return toast.error("落地名称不能为空");
-    const changes: Promise<any>[] = [];
-    if (nodeName !== renameForm.originalNodeName) changes.push(renameNode(renameForm.nodeId, nodeName));
-    if (landingName !== renameForm.originalLandingName) changes.push(renameLanding(renameForm.landingId, landingName));
-    if (changes.length === 0) {
+    if (!landingName) return toast.error("中转节点名称不能为空");
+    if (landingName === renameForm.originalLandingName) {
       setRenameOpen(false);
       return;
     }
     setRenameLoading(true);
     try {
-      const results = await Promise.all(changes);
-      const failed = results.find((result) => result.code !== 0);
-      if (failed) {
-        toast.error(failed.msg || "名称更新失败");
+      const result = await renameLanding(renameForm.landingId, landingName);
+      if (result.code !== 0) {
+        toast.error(result.msg || "名称更新失败");
       } else {
-        toast.success("节点名称已更新");
+        toast.success("中转节点名称已更新");
         setRenameOpen(false);
       }
       loadAll();
@@ -304,8 +330,9 @@ export default function RelayPage() {
         {relayLines.map((ln) => {
           const n = ln.node;
           const l = landingById(ln.landingId);
-          const landingName = l ? `${l.name}(${l.type})` : `落地#${ln.landingId}`;
-          const displayName = lineName(n.name, landingName) || `中转#${ln.landingId}`;
+          const relayName = String(l?.name || "").trim() || `中转#${ln.landingId}`;
+          const landingName = l ? `${relayName} (${l.type})` : relayName;
+          const displayName = relayName;
           const online = n.status === 1;
           const firstIp = n.ip ? String(n.ip).split(",")[0].trim() : (n.serverIp || "");
           return (
@@ -326,6 +353,16 @@ export default function RelayPage() {
                     <Chip key={ib.id} size="sm" variant="flat" color="secondary">{protoLabel(ib.protocol)}</Chip>
                   ))}
                 </div>
+                <Switch
+                  size="sm"
+                  color="success"
+                  isSelected={isAutoProvisionEnabled(n.id, ln.landingId)}
+                  isDisabled={autoProvisionLoading === `${n.id}-${ln.landingId}`}
+                  onValueChange={(enabled) => void handleAutoProvisionTarget(n.id, ln.landingId, relayName, enabled)}
+                >
+                  套餐用户自动分配
+                </Switch>
+                <div className="text-xs text-default-500">开启后立即补发给现有有效套餐用户，之后兑换、购买或续费成功的用户会自动获得这条中转的独立计费线路。</div>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" color="primary" className="flex-1 min-w-[7rem]" onPress={() => openNodeAssign(n, ln.landingId, landingName, ln.inbounds.length)}>
                     👤 分配用户
@@ -336,11 +373,11 @@ export default function RelayPage() {
                     variant="flat"
                     className="min-w-[10rem]"
                     isLoading={globalProvisioning === `${n.id}-${ln.landingId}`}
-                    onPress={() => handleProvisionSubscribedUsers(n.id, ln.landingId, n.name, landingName)}
+                    onPress={() => handleProvisionSubscribedUsers(n.id, ln.landingId, relayName, landingName)}
                   >
                     全局分配套餐用户
                   </Button>
-                  <Button size="sm" variant="flat" onPress={() => openRename(n, l)}>
+                  <Button size="sm" variant="flat" onPress={() => openRename(l)}>
                     编辑名称
                   </Button>
                   {/* 自己用不必先建车友:一键开给当前管理员,不限速不限量不到期 */}
@@ -353,7 +390,7 @@ export default function RelayPage() {
                   >
                     🔑 我自己用
                   </Button>
-                  <Button size="sm" color="danger" variant="flat" onPress={() => handleClearNode(n.id, n.name, ln.landingId, landingName)}>
+                  <Button size="sm" color="danger" variant="flat" onPress={() => handleClearNode(n.id, relayName, ln.landingId, landingName)}>
                     清空该条
                   </Button>
                 </div>
@@ -414,14 +451,9 @@ export default function RelayPage() {
         <ModalContent>
           <ModalHeader>编辑中转节点名称</ModalHeader>
           <ModalBody className="space-y-3">
-            <div className="text-sm text-default-500">只修改面板与订阅中的显示名称，不会改变节点地址、端口、落地配置或已分配用户。</div>
+            <div className="text-sm text-default-500">只修改本条中转的显示名称；前置机名称保持不变，不会影响协议管理、节点地址、端口或已分配用户。</div>
             <Input
-              label="前置机名称（可留空）"
-              value={renameForm.nodeName}
-              onChange={(e) => setRenameForm({ ...renameForm, nodeName: e.target.value })}
-            />
-            <Input
-              label="落地名称"
+              label="中转节点名称"
               value={renameForm.landingName}
               onChange={(e) => setRenameForm({ ...renameForm, landingName: e.target.value })}
             />

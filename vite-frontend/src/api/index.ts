@@ -126,6 +126,9 @@ export const assignAllToUser = (data: any) => Network.post("/inbound/assign-all"
 export const provisionSubscribedUsers = (nodeId: number) => Network.post("/inbound/provision-subscribed-users", { nodeId });
 export const provisionSubscribedUsersRelay = (nodeId: number, landingId: number) =>
   Network.post("/inbound/provision-subscribed-users-relay", { nodeId, landingId });
+export const getAutoProvisionTargets = () => Network.post("/inbound/auto-provision-targets");
+export const setAutoProvisionTarget = (nodeId: number, landingId: number | null, enabled: boolean) =>
+  Network.post("/inbound/auto-provision-target", { nodeId, landingId, enabled });
 // 「我自己用」:把这台机器/这条中转的协议开给当前登录的管理员自己(不限速/不限量/不到期)
 export const assignSelf = (data: any) => Network.post("/inbound/assign-self", data);
 export const unassignInboundUser = (id: number) => Network.post("/inbound/unassign", { id });

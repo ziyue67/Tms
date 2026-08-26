@@ -1,11 +1,13 @@
 package com.admin.service;
 
 import com.admin.common.lang.R;
+import com.admin.common.event.SubscriptionActivatedEvent;
 import com.admin.entity.*;
 import com.admin.mapper.*;
 import com.admin.entity.StatisticsFlow;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -25,10 +27,11 @@ public class SubscriptionService {
     private final UserMapper users;
     private final StatisticsFlowMapper statistics;
     private final QuotaUsageLogMapper quotaLogs;
+    private final ApplicationEventPublisher eventPublisher;
     private final SecureRandom random = new SecureRandom();
 
-    public SubscriptionService(SubscriptionPlanMapper plans, UserSubscriptionMapper subscriptions, RedeemCodeMapper codes, ForwardMapper forwards, UserMapper users, StatisticsFlowMapper statistics, QuotaUsageLogMapper quotaLogs) {
-        this.plans = plans; this.subscriptions = subscriptions; this.codes = codes; this.forwards = forwards; this.users = users; this.statistics = statistics; this.quotaLogs = quotaLogs;
+    public SubscriptionService(SubscriptionPlanMapper plans, UserSubscriptionMapper subscriptions, RedeemCodeMapper codes, ForwardMapper forwards, UserMapper users, StatisticsFlowMapper statistics, QuotaUsageLogMapper quotaLogs, ApplicationEventPublisher eventPublisher) {
+        this.plans = plans; this.subscriptions = subscriptions; this.codes = codes; this.forwards = forwards; this.users = users; this.statistics = statistics; this.quotaLogs = quotaLogs; this.eventPublisher = eventPublisher;
     }
 
     public List<SubscriptionPlan> publicPlans() {
@@ -210,6 +213,7 @@ public class SubscriptionService {
         item.setMaxForwards(plan.getMaxForwards()); item.setUsedForwards(old == null ? 0 : old.getUsedForwards()); item.setStatus(1); item.setUpdatedTime(now);
         if (old == null) { item.setCreatedTime(now); subscriptions.insert(item); } else subscriptions.updateById(item);
         audit(item, "plan_activated", 0L, "planId=" + planId);
+        eventPublisher.publishEvent(new SubscriptionActivatedEvent(userId));
         return enrich(item);
     }
 

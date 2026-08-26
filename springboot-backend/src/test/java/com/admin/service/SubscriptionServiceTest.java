@@ -9,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.admin.entity.RedeemCode;
 import com.admin.entity.SubscriptionPlan;
 import com.admin.entity.UserSubscription;
+import com.admin.common.event.SubscriptionActivatedEvent;
 import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.QuotaUsageLogMapper;
 import com.admin.mapper.RedeemCodeMapper;
@@ -18,6 +19,7 @@ import com.admin.mapper.UserMapper;
 import com.admin.mapper.UserSubscriptionMapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -41,12 +43,13 @@ class SubscriptionServiceTest {
     @Mock UserMapper users;
     @Mock StatisticsFlowMapper statistics;
     @Mock QuotaUsageLogMapper quotaLogs;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     private SubscriptionService service;
 
     @BeforeEach
     void setUp() {
-        service = new SubscriptionService(plans, subscriptions, codes, forwards, users, statistics, quotaLogs);
+        service = new SubscriptionService(plans, subscriptions, codes, forwards, users, statistics, quotaLogs, eventPublisher);
     }
 
     private long utc(String value) {
@@ -98,6 +101,7 @@ class SubscriptionServiceTest {
         assertEquals(1000L * 1024 * 1024 * 1024, activated.getTrafficLimitBytes());
         assertEquals(0L, activated.getNextResetAt());
         assertEquals(0L, activated.getTrafficUsedBytes());
+        verify(eventPublisher).publishEvent(any(SubscriptionActivatedEvent.class));
     }
 
     @Test

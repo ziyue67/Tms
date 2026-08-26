@@ -5,6 +5,7 @@ import { Input } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Chip } from "@heroui/chip";
+import { Switch } from "@heroui/switch";
 import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
 import { DatePicker } from "@heroui/date-picker";
 import { parseDate } from "@internationalized/date";
@@ -16,6 +17,8 @@ import {
   deleteInboundsByNode,
   assignAllToUser,
   provisionSubscribedUsers,
+  getAutoProvisionTargets,
+  setAutoProvisionTarget,
   assignSelf,
   getNodeList,
   getAllUsers,
@@ -64,6 +67,8 @@ export default function InboundPage() {
   // 「我自己用」:一键开给当前管理员自己,完事直接把订阅链接弹出来
   const [selfLoading, setSelfLoading] = useState<number | null>(null);
   const [globalProvisioning, setGlobalProvisioning] = useState<number | null>(null);
+  const [autoTargets, setAutoTargets] = useState<any[]>([]);
+  const [autoProvisionLoading, setAutoProvisionLoading] = useState<number | null>(null);
   const [selfSubUrl, setSelfSubUrl] = useState<string>("");
   const [selfOpen, setSelfOpen] = useState(false);
   // 订阅链接的域名部分永远是【面板地址】,几台机器点出来长得几乎一样,
@@ -90,12 +95,13 @@ export default function InboundPage() {
 
   const loadAll = async () => {
     try {
-      const [ib, nd, us, sp, cn] = await Promise.all([
+      const [ib, nd, us, sp, cn, at] = await Promise.all([
         getInboundList(),
         getNodeList(),
         getAllUsers(),
         getSpeedLimitList(),
         getCustomNodes(),
+        getAutoProvisionTargets(),
       ]);
       if (ib.code === 0) setInbounds(ib.data || []);
       if (nd.code === 0) setNodes(nd.data || []);
@@ -105,6 +111,7 @@ export default function InboundPage() {
       }
       if (sp.code === 0) setSpeedRules(sp.data || []);
       if (cn.code === 0) setCustomNodes(cn.data || []);
+      if (at.code === 0) setAutoTargets(at.data || []);
     } catch (e) {
       toast.error("加载失败");
     }
@@ -238,6 +245,33 @@ export default function InboundPage() {
       toast.error('全局分配失败');
     } finally {
       setGlobalProvisioning(null);
+    }
+  };
+
+  const isAutoProvisionEnabled = (nodeId: number) => autoTargets.some(
+    (target) => Number(target.nodeId) === Number(nodeId) && Number(target.landingId || 0) === 0 && Number(target.enabled) === 1,
+  );
+
+  const handleAutoProvisionTarget = async (nodeId: number, nodeName: string, enabled: boolean) => {
+    setAutoProvisionLoading(nodeId);
+    try {
+      const response = await setAutoProvisionTarget(nodeId, null, enabled);
+      if (response.code !== 0) {
+        toast.error(response.msg || "自动分配设置失败");
+        return;
+      }
+      if (enabled) {
+        const errors = Array.isArray(response.data?.errors) ? response.data.errors : [];
+        if (errors.length) toast.error(`自动分配已开启；${response.data?.provisionedUsers || 0} 个现有用户已开通，${errors.length} 个失败`);
+        else toast.success(`已开启「${nodeName}」自动分配，${response.data?.provisionedUsers || 0} 个现有套餐用户已开通`);
+      } else {
+        toast.success(`已关闭「${nodeName}」自动分配；已分配用户不会受影响`);
+      }
+      await loadAll();
+    } catch (error) {
+      toast.error("自动分配设置失败");
+    } finally {
+      setAutoProvisionLoading(null);
     }
   };
 
@@ -389,6 +423,16 @@ export default function InboundPage() {
                 <div className="text-xs text-default-400">
                   整机一条订阅:分配给车友后,一条订阅链接导入客户端即拿到上面全部协议,以后加新协议自动更新。
                 </div>
+                <Switch
+                  size="sm"
+                  color="success"
+                  isSelected={isAutoProvisionEnabled(n.id)}
+                  isDisabled={autoProvisionLoading === n.id}
+                  onValueChange={(enabled) => void handleAutoProvisionTarget(n.id, n.name, enabled)}
+                >
+                  套餐用户自动分配
+                </Switch>
+                <div className="text-xs text-default-500">开启后立即补发给现有有效套餐用户，之后兑换、购买或续费成功的用户也会自动获得该机独立计费线路。</div>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" color="primary" className="flex-1" onPress={() => openNodeAssign(n, nodeInbounds.length)}>
                     👤 分配用户

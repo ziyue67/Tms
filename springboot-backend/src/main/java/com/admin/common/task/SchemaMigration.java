@@ -90,6 +90,8 @@ public class SchemaMigration implements ApplicationRunner {
         addColumn(c, d, "custom_node", "visibility", "VARCHAR(12) NOT NULL DEFAULT 'global'");
         createTable(c, d, "user_custom_node", "(" +
                 "id " + id + ", user_id BIGINT NOT NULL, custom_node_id BIGINT NOT NULL, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (user_id, custom_node_id))");
+        createTable(c, d, "inbound_auto_provision", "(" +
+                "id " + id + ", node_id BIGINT NOT NULL, landing_id BIGINT NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL, PRIMARY KEY (id), UNIQUE (node_id, landing_id))");
         // Temporary verification data is Redis-only. Remove the legacy table from older installations.
         dropTable(c, d, "verification_code");
         // Before visibility was introduced, only nodes with assignment rows were

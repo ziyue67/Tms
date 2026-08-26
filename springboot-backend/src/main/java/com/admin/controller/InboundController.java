@@ -194,6 +194,20 @@ public class InboundController extends BaseController {
         return inboundService.provisionSubscribedUsers(asLong(body.get("nodeId")), asLong(body.get("landingId")));
     }
 
+    @RequireRole
+    @PostMapping("/auto-provision-targets")
+    public R autoProvisionTargets() {
+        return inboundService.getAutoProvisionTargets();
+    }
+
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/auto-provision-target")
+    public R setAutoProvisionTarget(@RequestBody Map<String, Object> body) {
+        boolean enabled = body.get("enabled") != null && Boolean.parseBoolean(String.valueOf(body.get("enabled")));
+        return inboundService.setAutoProvisionTarget(asLong(body.get("nodeId")), asLong(body.get("landingId")), enabled);
+    }
+
     @LogAnnotation
     @RequireRole
     @PostMapping("/reload-node")

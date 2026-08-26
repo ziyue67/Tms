@@ -10,6 +10,7 @@ import com.admin.common.utils.ClashUtil;
 import com.admin.common.utils.SingboxUtil;
 import com.admin.entity.Forward;
 import com.admin.entity.Inbound;
+import com.admin.entity.InboundAutoProvision;
 import com.admin.entity.InboundLine;
 import com.admin.entity.InboundUser;
 import com.admin.entity.Node;
@@ -19,6 +20,7 @@ import com.admin.entity.UserSubscription;
 import com.admin.entity.CustomNode;
 import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.InboundMapper;
+import com.admin.mapper.InboundAutoProvisionMapper;
 import com.admin.mapper.InboundUserMapper;
 import com.admin.mapper.NodeMapper;
 import com.admin.mapper.TunnelMapper;
@@ -75,6 +77,8 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
     private com.admin.mapper.LandingMapper landingMapper;
     @Autowired
     private com.admin.mapper.InboundLineMapper inboundLineMapper;
+    @Autowired
+    private InboundAutoProvisionMapper inboundAutoProvisionMapper;
     @Autowired
     private com.admin.service.LandingService landingService;
     @Autowired
@@ -288,6 +292,9 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         for (Inbound in : inbounds) {
             deleteInbound(in.getId());
         }
+        // A cleared protocol group cannot serve future subscription users.
+        // Remove its automatic-assignment setting as well, so it cannot become a stale target.
+        deleteAutoProvisionTargets(nodeId, relay, landingId);
         return R.ok();
     }
 
@@ -616,6 +623,118 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         result.put("skippedUsers", skipped);
         result.put("errors", errors);
         return R.ok(result);
+    }
+
+    @Override
+    public R getAutoProvisionTargets() {
+        return R.ok(inboundAutoProvisionMapper.selectList(
+                new QueryWrapper<InboundAutoProvision>().orderByAsc("node_id", "landing_id")));
+    }
+
+    @Override
+    public R setAutoProvisionTarget(Long nodeId, Long landingId, boolean enabled) {
+        if (nodeId == null || nodeMapper.selectById(nodeId) == null) {
+            return R.err("节点不存在");
+        }
+        Long storedLandingId = autoProvisionLandingId(landingId);
+        if (!hasProtocolGroup(nodeId, landingId)) {
+            return R.err(landingId == null ? "这台机器还没有直连协议" : "这条中转还没有协议");
+        }
+
+        InboundAutoProvision target = inboundAutoProvisionMapper.selectOne(
+                new QueryWrapper<InboundAutoProvision>().eq("node_id", nodeId).eq("landing_id", storedLandingId).last("limit 1"));
+        long now = System.currentTimeMillis();
+        if (target == null) {
+            target = new InboundAutoProvision();
+            target.setNodeId(nodeId);
+            target.setLandingId(storedLandingId);
+            target.setCreatedTime(now);
+        }
+        target.setEnabled(enabled ? 1 : 0);
+        target.setUpdatedTime(now);
+        if (target.getId() == null) {
+            inboundAutoProvisionMapper.insert(target);
+        } else {
+            inboundAutoProvisionMapper.updateById(target);
+        }
+
+        JSONObject result = new JSONObject();
+        result.put("nodeId", nodeId);
+        result.put("landingId", landingId);
+        result.put("enabled", enabled);
+        if (!enabled) {
+            return R.ok(result);
+        }
+
+        // Enabling is deliberately a backfill as well: existing valid subscribers
+        // receive their own credentials now; later activations use the saved target.
+        R provisioned = provisionSubscribedUsers(nodeId, landingId);
+        if (provisioned.getCode() != 0) {
+            return provisioned;
+        }
+        if (provisioned.getData() instanceof JSONObject data) {
+            result.putAll(data);
+        }
+        return R.ok(result);
+    }
+
+    @Override
+    public void provisionAutoTargetsForUser(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null || (user.getRoleId() != null && user.getRoleId() == 0)
+                || "root".equalsIgnoreCase(user.getUser()) || subscriptionService.current(userId) == null
+                || !subscriptionService.isSubscriptionUsable(userId)) {
+            return;
+        }
+        List<InboundAutoProvision> targets = inboundAutoProvisionMapper.selectList(
+                new QueryWrapper<InboundAutoProvision>().eq("enabled", 1));
+        for (InboundAutoProvision target : targets) {
+            Long landingId = target.getLandingId() == null || target.getLandingId() == 0 ? null : target.getLandingId();
+            if (!hasProtocolGroup(target.getNodeId(), landingId)) {
+                // A target can become obsolete if its protocol group was removed while
+                // an earlier deployment was running. Disable it instead of failing every renewal.
+                target.setEnabled(0);
+                target.setUpdatedTime(System.currentTimeMillis());
+                inboundAutoProvisionMapper.updateById(target);
+                continue;
+            }
+            InboundUserDto dto = new InboundUserDto();
+            dto.setUserId(userId);
+            dto.setNodeId(target.getNodeId());
+            if (landingId != null) {
+                dto.setRelay(true);
+                dto.setLandingId(landingId);
+            }
+            assignAllToUser(dto);
+        }
+    }
+
+    private Long autoProvisionLandingId(Long landingId) {
+        return landingId == null ? 0L : landingId;
+    }
+
+    private boolean hasProtocolGroup(Long nodeId, Long landingId) {
+        QueryWrapper<Inbound> query = new QueryWrapper<Inbound>().eq("node_id", nodeId);
+        if (landingId == null) {
+            query.isNull("landing_id");
+        } else {
+            query.eq("landing_id", landingId);
+        }
+        return this.count(query) > 0;
+    }
+
+    private void deleteAutoProvisionTargets(Long nodeId, Boolean relay, Long landingId) {
+        QueryWrapper<InboundAutoProvision> query = new QueryWrapper<InboundAutoProvision>().eq("node_id", nodeId);
+        if (Boolean.TRUE.equals(relay)) {
+            if (landingId == null) {
+                query.ne("landing_id", 0);
+            } else {
+                query.eq("landing_id", landingId);
+            }
+        } else {
+            query.eq("landing_id", 0);
+        }
+        inboundAutoProvisionMapper.delete(query);
     }
 
     /** 给某用户在某入站上建凭证+转发,但不推 sing-box(批量分配时最后统一推)。limiterName=车友专属限速器名(调用方已推好) */

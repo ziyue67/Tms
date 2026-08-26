@@ -44,6 +44,15 @@ public interface InboundService extends IService<Inbound> {
     /** Same operation for one relay landing group. */
     R provisionSubscribedUsers(Long nodeId, Long landingId);
 
+    /** Lists the direct and relay protocol groups configured for subscription auto-provisioning. */
+    R getAutoProvisionTargets();
+
+    /** Enables/disables automatic provisioning for one direct or relay protocol group. */
+    R setAutoProvisionTarget(Long nodeId, Long landingId, boolean enabled);
+
+    /** Called after a user receives a usable subscription through redemption or payment. */
+    void provisionAutoTargetsForUser(Long userId);
+
     /** 取消某个入站用户 */
     R unassignUser(Long inboundUserId);
 
