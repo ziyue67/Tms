@@ -178,6 +178,14 @@ public class InboundController extends BaseController {
                 body.get("remark") == null ? "" : String.valueOf(body.get("remark")));
     }
 
+    /** 为所有有效套餐用户开通该原生节点，使用户流量可被 GOST 精确计量。 */
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/provision-subscribed-users")
+    public R provisionSubscribedUsers(@RequestBody Map<String, Object> body) {
+        return inboundService.provisionSubscribedUsers(asLong(body.get("nodeId")));
+    }
+
     @LogAnnotation
     @RequireRole
     @PostMapping("/reload-node")

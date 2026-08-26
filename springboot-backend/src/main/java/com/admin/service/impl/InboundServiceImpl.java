@@ -572,6 +572,41 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         return R.ok(result);
     }
 
+    @Override
+    public R provisionSubscribedUsers(Long nodeId) {
+        Node node = nodeMapper.selectById(nodeId);
+        if (node == null) {
+            return R.err("节点不存在");
+        }
+        int provisioned = 0;
+        int skipped = 0;
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        for (User user : userMapper.selectList(new QueryWrapper<User>().eq("status", 1))) {
+            if (user.getRoleId() != null && user.getRoleId() == 0) {
+                continue;
+            }
+            if (subscriptionService.current(user.getId()) == null || !subscriptionService.isSubscriptionUsable(user.getId())) {
+                skipped++;
+                continue;
+            }
+            InboundUserDto dto = new InboundUserDto();
+            dto.setUserId(user.getId());
+            dto.setNodeId(nodeId);
+            R assigned = assignAllToUser(dto);
+            if (assigned.getCode() == 0) {
+                provisioned++;
+            } else {
+                errors.add(user.getUser() + ": " + assigned.getMsg());
+            }
+        }
+        JSONObject result = new JSONObject();
+        result.put("nodeId", nodeId);
+        result.put("provisionedUsers", provisioned);
+        result.put("skippedUsers", skipped);
+        result.put("errors", errors);
+        return R.ok(result);
+    }
+
     /** 给某用户在某入站上建凭证+转发,但不推 sing-box(批量分配时最后统一推)。limiterName=车友专属限速器名(调用方已推好) */
     private R assignOneNoPush(Inbound in, Node node, User user, Integer limiterName, Long expTime, String subToken) {
         return assignOneNoPush(in, node, user, limiterName, expTime, subToken, new java.util.HashSet<>());

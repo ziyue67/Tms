@@ -15,6 +15,7 @@ import {
   oneClickInbound,
   deleteInboundsByNode,
   assignAllToUser,
+  provisionSubscribedUsers,
   assignSelf,
   getNodeList,
   getAllUsers,
@@ -60,6 +61,7 @@ export default function InboundPage() {
 
   // 「我自己用」:一键开给当前管理员自己,完事直接把订阅链接弹出来
   const [selfLoading, setSelfLoading] = useState<number | null>(null);
+  const [globalProvisioning, setGlobalProvisioning] = useState<number | null>(null);
   const [selfSubUrl, setSelfSubUrl] = useState<string>("");
   const [selfOpen, setSelfOpen] = useState(false);
   // 订阅链接的域名部分永远是【面板地址】,几台机器点出来长得几乎一样,
@@ -208,6 +210,24 @@ export default function InboundPage() {
     }
   };
 
+  const handleProvisionSubscribedUsers = async (nodeId: number, nodeName: string) => {
+    if (!window.confirm(`将「${nodeName}」的原生协议分配给所有已开通套餐的普通用户？每个用户会获得独立凭据，流量会计入其套餐。`)) return;
+    setGlobalProvisioning(nodeId);
+    try {
+      const response = await provisionSubscribedUsers(nodeId);
+      if (response.code !== 0) return toast.error(response.msg || '全局分配失败');
+      const data = response.data || {};
+      const errors = Array.isArray(data.errors) ? data.errors : [];
+      if (errors.length) toast.error(`已开通 ${data.provisionedUsers || 0} 个用户，${errors.length} 个失败`);
+      else toast.success(`已开通 ${data.provisionedUsers || 0} 个套餐用户`);
+      loadAll();
+    } catch (error) {
+      toast.error('全局分配失败');
+    } finally {
+      setGlobalProvisioning(null);
+    }
+  };
+
   const handleImportCustomNode = async () => {
     if (!customForm.link.trim()) return toast.error("请输入协议分享链接");
     if (customForm.visibility === "users" && customForm.userIds.length === 0) return toast.error("按用户订阅时至少选择一个用户");
@@ -319,9 +339,18 @@ export default function InboundPage() {
                 <div className="text-xs text-default-400">
                   整机一条订阅:分配给车友后,一条订阅链接导入客户端即拿到上面全部协议,以后加新协议自动更新。
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button size="sm" color="primary" className="flex-1" onPress={() => openNodeAssign(n, nodeInbounds.length)}>
                     👤 分配用户
+                  </Button>
+                  <Button
+                    size="sm"
+                    color="secondary"
+                    variant="flat"
+                    isLoading={globalProvisioning === n.id}
+                    onPress={() => handleProvisionSubscribedUsers(n.id, n.name)}
+                  >
+                    全局分配套餐用户
                   </Button>
                   {/* 自己用不必先建车友再分配:一键开给当前管理员,不限速不限量不到期 */}
                   <Button

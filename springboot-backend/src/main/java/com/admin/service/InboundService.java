@@ -38,6 +38,9 @@ public interface InboundService extends IService<Inbound> {
     /** 机器卡分配:把某台机器(dto.nodeId)的全套协议一次分给车友;不传 nodeId=所有机器。返回订阅 token,车友一条订阅拿到全部协议 */
     R assignAllToUser(InboundUserDto dto);
 
+    /** 将某台原生节点分配给所有有效套餐的普通用户，生成可计费的独立凭据。 */
+    R provisionSubscribedUsers(Long nodeId);
+
     /** 取消某个入站用户 */
     R unassignUser(Long inboundUserId);
 
