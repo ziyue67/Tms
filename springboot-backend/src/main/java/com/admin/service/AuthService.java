@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Locale;
 
 @Service
 public class AuthService {
@@ -32,6 +33,10 @@ public class AuthService {
 
     public void sendRegisterCode(String email, String clientIp) {
         String normalized = EmailVerificationService.normalize(email);
+        ensureRegistrationAllowed(normalized);
+        if (!emailVerificationEnabled()) {
+            throw new IllegalArgumentException("当前注册未启用邮箱验证，无需发送验证码");
+        }
         if (users.getOne(new QueryWrapper<User>().eq("email", normalized)) != null) {
             throw new IllegalArgumentException("邮箱已注册");
         }
@@ -67,11 +72,12 @@ public class AuthService {
     @Transactional
     public R register(RegisterDto dto) {
         String email = EmailVerificationService.normalize(dto.getEmail());
+        ensureRegistrationAllowed(email);
         if (users.getOne(new QueryWrapper<User>().eq("email", email)) != null) return R.err("邮箱已注册");
         String username = dto.getUsername() == null ? "" : dto.getUsername().trim();
         if (username.isEmpty()) username = email.substring(0, email.indexOf('@'));
         if (users.getOne(new LambdaQueryWrapper<User>().eq(User::getUser, username)) != null) return R.err("用户名已存在");
-        if (!verification.consume(email, dto.getCode())) return R.err("验证码错误或已过期");
+        if (emailVerificationEnabled() && !verification.consume(email, dto.getCode())) return R.err("验证码错误或已过期");
 
         User user = new User();
         user.setUser(username);
@@ -98,9 +104,60 @@ public class AuthService {
 
     public Map<String, Object> publicConfig() {
         Map<String, Object> result = new HashMap<>();
-        com.admin.entity.ViteConfig captcha = configs.getOne(new QueryWrapper<com.admin.entity.ViteConfig>().eq("name", "captcha_enabled"));
-        result.put("captchaEnabled", captcha != null && "true".equalsIgnoreCase(captcha.getValue()));
-        result.put("registrationEnabled", true);
+        result.put("captchaEnabled", configEnabled("captcha_enabled", false));
+        result.put("registrationEnabled", configEnabled("registration_enabled", true));
+        result.put("emailVerificationEnabled", emailVerificationEnabled());
         return result;
+    }
+
+    private boolean emailVerificationEnabled() {
+        return configEnabled("registration_email_verification", true);
+    }
+
+    private boolean configEnabled(String name, boolean fallback) {
+        com.admin.entity.ViteConfig config = configs.getOne(new QueryWrapper<com.admin.entity.ViteConfig>().eq("name", name));
+        return config == null || config.getValue() == null || config.getValue().isBlank()
+                ? fallback : "true".equalsIgnoreCase(config.getValue());
+    }
+
+    /** Applies the registration policy before either sending a code or creating an account. */
+    private void ensureRegistrationAllowed(String email) {
+        if (!configEnabled("registration_enabled", true)) {
+            throw new IllegalArgumentException("管理员已关闭新用户注册");
+        }
+        int at = email.lastIndexOf('@');
+        if (at <= 0 || at == email.length() - 1) {
+            throw new IllegalArgumentException("邮箱格式错误");
+        }
+        String domain = email.substring(at + 1).toLowerCase(Locale.ROOT);
+        String whitelist = configValue("registration_email_whitelist");
+        if (whitelist.isBlank()) {
+            return;
+        }
+        boolean allowed = false;
+        for (String rawRule : whitelist.split("[,\\n\\r ]+")) {
+            String rule = rawRule.trim().toLowerCase(Locale.ROOT);
+            if (rule.startsWith("@")) rule = rule.substring(1);
+            if (rule.startsWith("*.")) rule = rule.substring(2);
+            if (!rule.isBlank() && (domain.equals(rule) || domain.endsWith("." + rule))) {
+                allowed = true;
+                break;
+            }
+        }
+        if (allowed) {
+            return;
+        }
+        if (!configEnabled("registration_non_whitelist_domain_limit", false)) {
+            throw new IllegalArgumentException("该邮箱域名不在注册白名单内");
+        }
+        long existing = users.count(new QueryWrapper<User>().like("email", "@" + domain));
+        if (existing > 0) {
+            throw new IllegalArgumentException("该非白名单邮箱域名已注册过账号");
+        }
+    }
+
+    private String configValue(String name) {
+        com.admin.entity.ViteConfig config = configs.getOne(new QueryWrapper<com.admin.entity.ViteConfig>().eq("name", name));
+        return config == null || config.getValue() == null ? "" : config.getValue().trim();
     }
 }

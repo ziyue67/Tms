@@ -59,6 +59,15 @@ const SECTION_KEYS: Record<ConfigSection, string[]> = {
   email: [],
 };
 
+const PAYMENT_GROUP_TITLES: Record<string, string> = {
+  payment_enabled: '基础支付设置',
+  payment_manual_enabled: '可用支付方式',
+  payment_alipay_enabled: '支付宝',
+  payment_wechat_enabled: '微信支付',
+  payment_easypay_enabled: '易支付',
+  payment_stripe_enabled: 'Stripe',
+};
+
 const DEFAULT_REGISTER_TEMPLATE = '<!DOCTYPE html><html><body style="margin:0;padding:20px;background:#f5f5f5;font-family:Arial,sans-serif"><div style="max-width:600px;margin:auto;background:#fff;border-radius:8px;overflow:hidden"><div style="padding:30px;text-align:center;background:#667eea;color:#fff"><h1>{{app_name}}</h1></div><div style="padding:40px 30px;text-align:center"><h2>邮箱验证码</h2><p>请使用下面的验证码完成注册：</p><div style="padding:16px;background:#f3f4f6;border-radius:6px;font-size:32px;font-weight:bold;letter-spacing:8px">{{code}}</div><p>验证码将在 <strong>{{expires_minutes}} 分钟</strong> 后失效。</p></div><div style="padding:20px;text-align:center;background:#f8f9fa;color:#999;font-size:12px">这是系统自动发送的邮件，请勿直接回复。</div></div></body></html>';
 const DEFAULT_RESET_TEMPLATE = '<!DOCTYPE html><html><body style="margin:0;padding:20px;background:#f5f5f5;font-family:Arial,sans-serif"><div style="max-width:600px;margin:auto;background:#fff;border-radius:8px;overflow:hidden"><div style="padding:30px;text-align:center;background:#667eea;color:#fff"><h1>{{app_name}}</h1></div><div style="padding:40px 30px;text-align:center"><h2>密码重置请求</h2><p>请点击下方按钮设置新密码：</p><p><a href="{{reset_url}}" style="display:inline-block;padding:12px 24px;background:#667eea;color:#fff;text-decoration:none;border-radius:5px">重置密码</a></p><p>该链接将在 <strong>{{expires_minutes}} 分钟</strong> 后失效且只能使用一次。</p></div><div style="padding:20px;text-align:center;background:#f8f9fa;color:#999;font-size:12px">这是系统自动发送的邮件，请勿直接回复。</div></div></body></html>';
 
@@ -119,6 +128,10 @@ const CONFIG_ITEMS: ConfigItem[] = [
       }
     ]
   },
+  { key: 'registration_enabled', label: '开放注册', description: '允许新用户自行注册账号。', type: 'switch' },
+  { key: 'registration_email_verification', label: '邮箱验证', description: '新用户注册时必须完成邮箱验证码验证。', type: 'switch' },
+  { key: 'registration_email_whitelist', label: '邮箱域名白名单', placeholder: '@qq.com, @gmail.com, *.edu.cn', description: '留空不限。填写后仅白名单域名可无限注册；可使用逗号、空格或换行分隔。', type: 'input' },
+  { key: 'registration_non_whitelist_domain_limit', label: '非白名单域名限量注册', description: '白名单存在时，允许每个非白名单域名注册一个账号；关闭则直接拒绝。', type: 'switch' },
   { key: 'smtp_host', label: 'SMTP 服务器', placeholder: 'smtp.example.com', description: '用于发送注册验证码；留空时不能发送邮箱验证码。', type: 'input' },
   { key: 'smtp_port', label: 'SMTP 端口', placeholder: '587', type: 'input' },
   { key: 'smtp_username', label: 'SMTP 用户名', placeholder: '发件邮箱账号', type: 'input' },
@@ -195,6 +208,7 @@ export default function ConfigPage() {
   const [hasChanges, setHasChanges] = useState(false);
   const [originalConfigs, setOriginalConfigs] = useState<Record<string, string>>(initialConfigs);
   const [activeSection, setActiveSection] = useState<ConfigSection>('general');
+  const [testRecipient, setTestRecipient] = useState('');
 
   // 权限检查
   useEffect(() => {
@@ -310,9 +324,9 @@ export default function ConfigPage() {
   };
 
   const handleSmtpTest = async () => {
-    const email = window.prompt('输入接收测试邮件的地址');
-    if (!email) return;
-    const response = await testAdminEmail(email.trim());
+    const email = testRecipient.trim();
+    if (!email) return toast.error('请输入接收测试邮件的地址');
+    const response = await testAdminEmail(email);
     if (response.code === 0) toast.success('测试邮件已发送');
     else toast.error(response.msg || 'SMTP 测试失败');
   };
@@ -526,9 +540,15 @@ export default function ConfigPage() {
             )}
             {activeConfigItems.map((item, index) => {
               const isLastItem = index === activeConfigItems.length - 1;
+              const paymentGroupTitle = activeSection === 'payment' ? PAYMENT_GROUP_TITLES[item.key] : undefined;
 
               return (
                 <div key={item.key} className="space-y-3">
+                  {paymentGroupTitle && (
+                    <div className={index === 0 ? '' : 'pt-4 border-t border-divider'}>
+                      <h3 className="text-base font-semibold">{paymentGroupTitle}</h3>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {item.label}
@@ -550,6 +570,24 @@ export default function ConfigPage() {
                 </div>
               );
             })}
+            {activeSection === 'email' && (
+              <div className="border-t border-divider pt-5 space-y-3">
+                <div>
+                  <h3 className="text-base font-semibold">发送测试邮件</h3>
+                  <p className="text-sm text-default-500">保存 SMTP 配置后，向指定邮箱发送一封验证邮件。</p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    type="email"
+                    label="收件人邮箱"
+                    placeholder="test@example.com"
+                    value={testRecipient}
+                    onChange={(event) => setTestRecipient(event.target.value)}
+                  />
+                  <Button className="sm:self-end" variant="flat" onPress={handleSmtpTest}>发送测试邮件</Button>
+                </div>
+              </div>
+            )}
           </CardBody>
         </Card>
 
