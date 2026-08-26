@@ -516,12 +516,17 @@ EOF
 EOF
     fi
 
-    [ -n "$redis_url" ] && echo "   ✔ 检测到 REDIS_URL，使用外部 Redis，不启动本地 Redis 容器"
-    [ -n "$db_url" ] && echo "   ✔ 检测到 DB_URL，使用外部数据库，不启动本地 MySQL 容器"
+    if [ -n "$redis_url" ]; then
+      echo "   ✔ 检测到 REDIS_URL，使用外部 Redis，不启动本地 Redis 容器"
+    fi
+    if [ -n "$db_url" ]; then
+      echo "   ✔ 检测到 DB_URL，使用外部数据库，不启动本地 MySQL 容器"
+    fi
   elif [ -f docker-compose.override.yml ] && grep -q 'TMS_EXTERNAL_.*_OVERRIDE' docker-compose.override.yml; then
     rm -f docker-compose.override.yml
     echo "   ℹ 未设置外部数据库或 Redis，恢复内置服务配置"
   fi
+  return 0
 }
 
 # 安装功能
