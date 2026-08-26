@@ -353,14 +353,23 @@ jobs:
           echo "🔄 更新 Release ${VERSION} 中的 GOST 二进制文件..."
 
           # A tag can exist without a GitHub Release, especially after importing
-          # an upstream repository. Building images must not fail in that case.
+          # an upstream repository. Create the missing release so the stable
+          # releases/latest/download/install.sh URL always remains usable.
           if ! gh release view "${VERSION}" >/dev/null 2>&1; then
-            echo "ℹ️ Release ${VERSION} 不存在，跳过 GOST 产物上传"
-            exit 0
+            echo "ℹ️ Release ${VERSION} 不存在，创建补发 Release"
+            gh release create "${VERSION}" \
+              --title "Release ${VERSION}" \
+              --notes "GOST 节点安装包与 TMS 配置文件。" \
+              --latest
           fi
           
           gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
           gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
+          gh release upload "${VERSION}" ./install.sh --clobber
+          gh release upload "${VERSION}" ./panel_install.sh --clobber
+          gh release upload "${VERSION}" ./docker-compose-v4.yml --clobber
+          gh release upload "${VERSION}" ./docker-compose-v6.yml --clobber
+          gh release upload "${VERSION}" ./gost.sql --clobber
           
           echo "✅ GOST 二进制文件更新完成！"
           echo "ℹ️ Docker 镜像未重新构建"
