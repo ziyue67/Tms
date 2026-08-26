@@ -178,6 +178,13 @@ public class InboundController extends BaseController {
                 body.get("remark") == null ? "" : String.valueOf(body.get("remark")));
     }
 
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/reload-node")
+    public R reloadNode(@RequestBody Map<String, Object> body) {
+        return inboundService.reloadNodeSingbox(asLong(body.get("nodeId")));
+    }
+
     /** null / 空串都当没传。直连线路的 landingId 本来就是空的,不能当成参数错误。 */
     private static Long asLong(Object v) {
         if (v == null) {

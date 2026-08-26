@@ -1285,6 +1285,14 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         return R.ok();
     }
 
+    @Override
+    public R reloadNodeSingbox(Long nodeId) {
+        if (nodeId == null || nodeMapper.selectById(nodeId) == null) {
+            return R.err("节点不存在");
+        }
+        return pushNodeSingbox(nodeId);
+    }
+
     /** 该车友在这条线路(机器 × 落地)下的所有协议分配记录 */
     private List<InboundUser> lineInboundUsers(Long userId, Long nodeId, Long landingId) {
         List<InboundUser> all = inboundUserMapper.selectList(
@@ -1435,10 +1443,10 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
                 .eq("in_node_id", nodeId).eq("type", TUNNEL_TYPE_PORT_FORWARD).last("limit 1"));
     }
 
-    /** 分配 sing-box 本机监听口(40000+,避开 gost 公网口段) */
+    /** 分配 sing-box 本机监听口(41000+,避开 Cloudflare WARP 常用的 40000 端口) */
     private Integer allocateListenPort(Long nodeId) {
         List<Inbound> inbounds = this.list(new QueryWrapper<Inbound>().eq("node_id", nodeId));
-        int max = SINGBOX_LISTEN_BASE - 1;
+        int max = Math.max(SINGBOX_LISTEN_BASE, 41000) - 1;
         for (Inbound in : inbounds) {
             if (in.getListenPort() != null && in.getListenPort() > max) {
                 max = in.getListenPort();

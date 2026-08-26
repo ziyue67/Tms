@@ -56,6 +56,9 @@ public interface InboundService extends IService<Inbound> {
     /** 给协议改显示名(写 Inbound.remark);订阅链接按需生成,改完车友刷新订阅即见新名 */
     R renameInbound(Long id, String remark);
 
+    /** 重新下发某节点的完整 sing-box 配置，用于节点恢复或端口迁移。 */
+    R reloadNodeSingbox(Long nodeId);
+
     /** 按订阅 token 生成该用户所有协议链接的 base64 订阅内容(客户端订阅用) */
     String buildSubscription(String token);
 
