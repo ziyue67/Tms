@@ -223,6 +223,8 @@ export default function UserPage() {
     loadUsers();
     loadTunnels();
     loadSpeedLimits();
+    const refresh = window.setInterval(loadUsers, 15000);
+    return () => window.clearInterval(refresh);
   }, [pagination.current, pagination.size, searchKeyword]);
 
   // 数据加载函数
