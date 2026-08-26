@@ -104,7 +104,10 @@ public class CustomNodeService {
         List<Map<String, Object>> result = new ArrayList<>();
         for (CustomNode node : list()) {
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("id", node.getId()); item.put("name", node.getName()); item.put("protocol", node.getProtocol()); item.put("visibility", node.getVisibility() == null ? "global" : node.getVisibility()); item.put("status", node.getStatus()); item.put("createdTime", node.getCreatedTime());
+            // Snowflake IDs exceed JavaScript's safe integer range. Returning them as
+            // JSON numbers silently changes the value in the browser, causing actions
+            // to target a different node ID. Keep the identifier as a string end-to-end.
+            item.put("id", String.valueOf(node.getId())); item.put("name", node.getName()); item.put("protocol", node.getProtocol()); item.put("visibility", node.getVisibility() == null ? "global" : node.getVisibility()); item.put("status", node.getStatus()); item.put("createdTime", node.getCreatedTime());
             List<UserCustomNode> rows = assignments.selectList(new QueryWrapper<UserCustomNode>().eq("custom_node_id", node.getId()).eq("status", 1));
             List<Long> userIds = new ArrayList<>(); for (UserCustomNode row : rows) userIds.add(row.getUserId());
             item.put("userIds", userIds);

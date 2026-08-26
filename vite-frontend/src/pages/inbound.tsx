@@ -254,6 +254,42 @@ export default function InboundPage() {
     finally { setCustomLoading(false); }
   };
 
+  const isMissingCustomNode = (response: any) =>
+    typeof response?.msg === "string" && response.msg.includes("自定义节点不存在");
+
+  const removeCustomNodeFromPage = (nodeId: string | number) => {
+    setCustomNodes((current) => current.filter((item) => String(item.id) !== String(nodeId)));
+  };
+
+  const updateCustomNodeStatus = async (node: any, status: 0 | 1) => {
+    const response = status === 1
+      ? await enableCustomNode(node.id)
+      : await disableCustomNode(node.id);
+    if (response.code === 0) {
+      setCustomNodes((current) => current.map((item) =>
+        String(item.id) === String(node.id) ? { ...item, status } : item,
+      ));
+      toast.success(status === 1 ? "已启用" : "已停用");
+      return;
+    }
+    if (isMissingCustomNode(response)) {
+      removeCustomNodeFromPage(node.id);
+      toast.success("节点已删除");
+      return;
+    }
+    toast.error(response.msg || (status === 1 ? "启用失败" : "停用失败"));
+  };
+
+  const deleteCustomNodeFromPage = async (node: any) => {
+    const response = await deleteCustomNode(node.id);
+    if (response.code === 0 || isMissingCustomNode(response)) {
+      removeCustomNodeFromPage(node.id);
+      toast.success("已删除");
+      return;
+    }
+    toast.error(response.msg || "删除失败");
+  };
+
   // 协议管理只管【直连】协议(landingId 为空);中转的协议在「中转」页管
   const machineNodes = nodes.filter((n) => inbounds.some((ib) => ib.nodeId === n.id && !ib.landingId));
 
@@ -392,7 +428,7 @@ export default function InboundPage() {
       {customNodes.length > 0 && <Card>
         <CardBody className="space-y-3">
           <div className="font-semibold">自定义订阅节点</div>
-            <div className="text-xs text-default-500">外部订阅默认直连，不能识别具体用户流量。导入时选择中转出站后，会直接创建可计费线路，不会保留临时自定义节点。</div>
+            <div className="text-xs text-default-500">外部订阅默认直连，不能识别具体用户流量，也不会创建中转或计费转发。</div>
           {customNodes.map((node) => <div key={node.id} className="flex flex-wrap items-center gap-2 border-t border-divider pt-3">
             <Chip size="sm" color={node.status === 1 ? "success" : "default"}>{({ vless: "VLESS-Reality", trojan: "Trojan-Reality", vmess: "VMess", hysteria2: "Hysteria2", tuic: "TUIC", anytls: "AnyTLS" } as any)[node.protocol] || node.protocol}</Chip>
             <span className="font-medium">{node.name}</span>
@@ -402,9 +438,9 @@ export default function InboundPage() {
               const user = users.find((u) => Number(u.id) === Number(id));
               return <Chip key={id} size="sm" variant="flat">{user?.user || `用户 #${id}`}</Chip>;
             })}
-            {node.status === 1 && <Button size="sm" color="warning" variant="flat" onPress={async () => { if (window.confirm(`停用「${node.name}」？`)) { const r = await disableCustomNode(node.id); if (r.code === 0) { toast.success("已停用"); loadAll(); } else toast.error(r.msg || "停用失败"); } }}>停用</Button>}
-            {node.status !== 1 && <Button size="sm" color="success" variant="flat" onPress={async () => { const r = await enableCustomNode(node.id); if (r.code === 0) { toast.success("已启用"); loadAll(); } else toast.error(r.msg || "启用失败"); } }>启用</Button>}
-            <Button size="sm" color="danger" variant="flat" onPress={async () => { if (window.confirm(`永久删除「${node.name}」？此操作不可恢复`)) { setCustomNodes((current) => current.filter((item) => item.id !== node.id)); const r = await deleteCustomNode(node.id); if (r.code === 0) { toast.success("已删除"); loadAll(); } else { toast.error(r.msg || "删除失败"); loadAll(); } } }}>删除</Button>
+            {node.status === 1 && <Button size="sm" color="warning" variant="flat" onPress={() => { if (window.confirm(`停用「${node.name}」？`)) void updateCustomNodeStatus(node, 0); }}>停用</Button>}
+            {node.status !== 1 && <Button size="sm" color="success" variant="flat" onPress={() => void updateCustomNodeStatus(node, 1)}>启用</Button>}
+            <Button size="sm" color="danger" variant="flat" onPress={() => { if (window.confirm(`永久删除「${node.name}」？此操作不可恢复`)) void deleteCustomNodeFromPage(node); }}>删除</Button>
           </div>)}
         </CardBody>
       </Card>}

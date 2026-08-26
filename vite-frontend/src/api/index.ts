@@ -45,11 +45,13 @@ export const completeAdminTestOrder = (orderNo: string) => Network.post(`/admin/
 export const getCustomNodes = () => Network.get("/custom-nodes");
 export const importCustomNode = (name: string, link: string, visibility: "global" | "users" = "global", userIds: number[] = []) =>
   Network.post("/custom-nodes", { name, link, visibility, userIds });
-export const assignCustomNode = (nodeId: number, userId: number) => Network.post(`/custom-nodes/${nodeId}/assign`, { userId });
-export const unassignCustomNode = (nodeId: number, userId: number) => Network.delete(`/custom-nodes/${nodeId}/assign/${userId}`);
-export const deleteCustomNode = (nodeId: number) => Network.delete(`/custom-nodes/${nodeId}`);
-export const disableCustomNode = (nodeId: number) => Network.post(`/custom-nodes/${nodeId}/disable`);
-export const enableCustomNode = (nodeId: number) => Network.post(`/custom-nodes/${nodeId}/enable`);
+// Custom-node IDs are 64-bit Snowflake values, so the browser must never coerce them
+// to JavaScript numbers. Keep them as strings in URLs and component state.
+export const assignCustomNode = (nodeId: string | number, userId: number) => Network.post(`/custom-nodes/${nodeId}/assign`, { userId });
+export const unassignCustomNode = (nodeId: string | number, userId: number) => Network.delete(`/custom-nodes/${nodeId}/assign/${userId}`);
+export const deleteCustomNode = (nodeId: string | number) => Network.delete(`/custom-nodes/${nodeId}`);
+export const disableCustomNode = (nodeId: string | number) => Network.post(`/custom-nodes/${nodeId}/disable`);
+export const enableCustomNode = (nodeId: string | number) => Network.post(`/custom-nodes/${nodeId}/enable`);
 export const getAuthConfig = () => Network.get("/auth/config");
 export const testAdminEmail = (email: string) => Network.post("/admin/email/test", { email });
 export const getAdminEmailHealth = () => Network.get("/admin/email/health");
