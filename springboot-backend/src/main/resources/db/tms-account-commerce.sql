@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `subscription_plan` (
   `validity_unit` varchar(10) NOT NULL DEFAULT 'month',
   `traffic_bytes` bigint NOT NULL DEFAULT 0,
   `reset_day` tinyint NOT NULL DEFAULT 1 COMMENT '每月 1-31 日，不存在的日期取当月最后一天',
+  `reset_quota` tinyint NOT NULL DEFAULT 1 COMMENT '1=每月恢复完整额度，0=有效期内总量不恢复',
   `max_forwards` int NOT NULL DEFAULT 0,
   `for_sale` tinyint NOT NULL DEFAULT 1,
   `redeemable` tinyint NOT NULL DEFAULT 1,
@@ -29,6 +30,11 @@ CREATE TABLE IF NOT EXISTS `subscription_plan` (
   `updated_time` bigint NOT NULL,
   PRIMARY KEY (`id`), KEY `idx_plan_status` (`status`,`for_sale`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+SET @tms_sql = (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE `subscription_plan` ADD COLUMN `reset_quota` tinyint NOT NULL DEFAULT 1 COMMENT ''1=每月恢复完整额度，0=有效期内总量不恢复'' AFTER `reset_day`',
+  'SELECT 1') FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @tms_schema AND TABLE_NAME = 'subscription_plan' AND COLUMN_NAME = 'reset_quota');
+PREPARE tms_stmt FROM @tms_sql; EXECUTE tms_stmt; DEALLOCATE PREPARE tms_stmt;
 
 CREATE TABLE IF NOT EXISTS `user_subscription` (
   `id` bigint NOT NULL AUTO_INCREMENT,

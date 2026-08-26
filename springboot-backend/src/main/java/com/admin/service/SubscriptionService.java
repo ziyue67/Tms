@@ -122,9 +122,11 @@ public class SubscriptionService {
     private void resetIfDue(UserSubscription active, long now) {
         if (active.getNextResetAt() == null || active.getNextResetAt() <= 0 || active.getNextResetAt() > now) return;
         SubscriptionPlan plan = plans.selectById(active.getPlanId());
-        active.setTrafficUsedBytes(0L); active.setNextResetAt(nextReset(now, plan == null ? 1 : plan.getResetDay())); active.setUpdatedTime(now);
+        boolean resetQuota = plan == null || plan.getResetQuota() == null || plan.getResetQuota() == 1;
+        if (resetQuota) active.setTrafficUsedBytes(0L);
+        active.setNextResetAt(nextReset(now, plan == null ? 1 : plan.getResetDay())); active.setUpdatedTime(now);
         subscriptions.updateById(active);
-        audit(active, "traffic_reset", 0L, null);
+        audit(active, resetQuota ? "traffic_reset" : "traffic_period_checkpoint", 0L, resetQuota ? "quota_restored" : "quota_preserved");
     }
 
     public String quotaLimitError(long userId) {

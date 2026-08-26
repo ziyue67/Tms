@@ -18,7 +18,7 @@ The administrator endpoint `GET /api/v1/admin/email/audit?limit=50` reads the re
 
 All Compose variants start a persistent Redis 7 container. Set `REDIS_PASSWORD` to a long random value in `.env` (the compose fallback `change-me-now` is for development only), and set `TMS_RESET_URL_BASE` or `PUBLIC_BASE_URL` to the public frontend URL so links in email point to the deployed panel. External MySQL/PostgreSQL Compose files intentionally keep the database external while still running the Redis service locally.
 
-套餐示例：管理员进入“套餐与兑换码管理”即可自行创建套餐。月套餐 100G：有效期数值填 `1`、单位选“月”、流量上限填 `100` GB；永久 50G：有效期单位选“永久/不限制时间”、流量填 `50` GB、重置日填 `0`（不重置）。保存后在“批量兑换码”选择套餐并生成兑换码，用户在“兑换码”页面输入完整兑换码即可激活；兑换结果和剩余配额会显示在仪表盘。
+套餐示例：管理员进入“套餐与兑换码管理”即可自行创建套餐。主流年付月租模式：有效期数值填 `1`、单位选“年”、流量上限填 `1000` GB、重置日填 `21`、开启“每月恢复完整流量”，对外文案写“1000G/月，合约 1 年，每月 21 日重置”。一次性流量包：有效期单位选“永久/不限制时间”或“年”、流量填 `1000` GB、关闭“每月恢复完整流量”，对外文案写“总流量 1000GB，有效期 1 年/永久，每月只做统计检查，流量不恢复”。保存后在“批量兑换码”选择套餐并生成兑换码，用户在“兑换码”页面输入完整兑换码即可激活；兑换结果和剩余配额会显示在仪表盘。
 
 To use an external Redis instead, set `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DATABASE`, and optionally `REDIS_SSL=true` for the backend. The application uses Spring Data Redis and is compatible with Redis 6/7, managed Redis, and Redis instances outside Docker. Keep the Redis endpoint private and never commit its password.
 

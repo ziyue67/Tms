@@ -15,6 +15,8 @@ public class SubscriptionPlan {
     private String validityUnit;
     private Long trafficBytes;
     private Integer resetDay;
+    /** 1 = restore the full traffic quota on each reset day; 0 = one-time total quota. */
+    private Integer resetQuota;
     private Integer maxForwards;
     private Integer forSale;
     private Integer redeemable;
