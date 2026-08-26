@@ -36,10 +36,12 @@ public class AdminSubscriptionController {
 
     private void validate(SubscriptionPlan plan) {
         if (plan.getName() == null || plan.getName().trim().isEmpty()) throw new IllegalArgumentException("套餐名称不能为空");
-        if (plan.getValidityValue() == null || plan.getValidityValue() < 1) throw new IllegalArgumentException("有效期必须大于 0");
-        if (plan.getValidityUnit() == null || !("month".equalsIgnoreCase(plan.getValidityUnit()) || "year".equalsIgnoreCase(plan.getValidityUnit()))) throw new IllegalArgumentException("有效期单位必须是 month 或 year");
+        if (plan.getValidityUnit() == null || !("month".equalsIgnoreCase(plan.getValidityUnit()) || "year".equalsIgnoreCase(plan.getValidityUnit()) || "permanent".equalsIgnoreCase(plan.getValidityUnit()))) throw new IllegalArgumentException("有效期单位必须是 month、year 或 permanent");
+        if ("permanent".equalsIgnoreCase(plan.getValidityUnit())) {
+            if (plan.getValidityValue() == null || plan.getValidityValue() < 0) throw new IllegalArgumentException("永久套餐有效期数值必须为 0 或更大");
+        } else if (plan.getValidityValue() == null || plan.getValidityValue() < 1) throw new IllegalArgumentException("有效期必须大于 0");
         if (plan.getTrafficBytes() != null && plan.getTrafficBytes() < 0) throw new IllegalArgumentException("流量上限不能小于 0");
         if (plan.getMaxForwards() != null && plan.getMaxForwards() < 0) throw new IllegalArgumentException("转发上限不能小于 0");
-        if (plan.getResetDay() != null && (plan.getResetDay() < 1 || plan.getResetDay() > 31)) throw new IllegalArgumentException("流量重置日必须为 1 至 31");
+        if (plan.getResetDay() != null && (plan.getResetDay() < 0 || plan.getResetDay() > 31)) throw new IllegalArgumentException("流量重置日必须为 0 至 31，0 表示不重置");
     }
 }

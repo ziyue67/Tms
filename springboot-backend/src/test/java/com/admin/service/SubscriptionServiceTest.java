@@ -35,4 +35,9 @@ class SubscriptionServiceTest {
         long actual = SubscriptionService.calculateNextReset(utc("2026-05-31T01:00:00Z"), 31, ZoneOffset.UTC);
         assertEquals(utc("2026-06-30T00:00:00Z"), actual);
     }
+
+    @Test
+    void resetDayZeroDisablesPeriodicReset() {
+        assertEquals(0L, SubscriptionService.calculateNextReset(utc("2026-05-31T01:00:00Z"), 0, ZoneOffset.UTC));
+    }
 }

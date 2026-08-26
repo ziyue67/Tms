@@ -105,7 +105,7 @@ public class SubscriptionService {
     public void recordTrafficUsage(long userId, long bytes) {
         if (bytes <= 0) return;
         UserSubscription active = current(userId);
-        if (active == null || active.getExpiresAt() == null || active.getExpiresAt() <= System.currentTimeMillis()) return;
+        if (active == null || active.getExpiresAt() == null || (active.getExpiresAt() > 0 && active.getExpiresAt() <= System.currentTimeMillis())) return;
         resetIfDue(active, System.currentTimeMillis());
         com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<UserSubscription> update = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<>();
         update.eq("id", active.getId()).setSql("traffic_used_bytes = traffic_used_bytes + " + bytes).set("updated_time", System.currentTimeMillis());
@@ -120,7 +120,7 @@ public class SubscriptionService {
     }
 
     private void resetIfDue(UserSubscription active, long now) {
-        if (active.getNextResetAt() == null || active.getNextResetAt() > now) return;
+        if (active.getNextResetAt() == null || active.getNextResetAt() <= 0 || active.getNextResetAt() > now) return;
         SubscriptionPlan plan = plans.selectById(active.getPlanId());
         active.setTrafficUsedBytes(0L); active.setNextResetAt(nextReset(now, plan == null ? 1 : plan.getResetDay())); active.setUpdatedTime(now);
         subscriptions.updateById(active);
@@ -131,7 +131,7 @@ public class SubscriptionService {
         UserSubscription active = current(userId);
         if (active == null) return null;
         long now = System.currentTimeMillis(); resetIfDue(active, now);
-        if (active.getExpiresAt() != null && active.getExpiresAt() <= now) return "套餐已到期";
+        if (active.getExpiresAt() != null && active.getExpiresAt() > 0 && active.getExpiresAt() <= now) return "套餐已到期";
         if (active.getTrafficLimitBytes() != null && active.getTrafficLimitBytes() > 0 && active.getTrafficUsedBytes() != null && active.getTrafficUsedBytes() >= active.getTrafficLimitBytes()) return "套餐流量已用尽";
         return null;
     }
@@ -172,9 +172,10 @@ public class SubscriptionService {
         UserSubscription old = latest(userId);
         long start = old != null && old.getExpiresAt() != null && old.getExpiresAt() > now ? old.getExpiresAt() : now;
         ZonedDateTime z = Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault());
-        ZonedDateTime expiry = "year".equalsIgnoreCase(plan.getValidityUnit()) ? z.plusYears(plan.getValidityValue()) : z.plusMonths(plan.getValidityValue());
+        boolean permanent = "permanent".equalsIgnoreCase(plan.getValidityUnit());
+        ZonedDateTime expiry = permanent ? null : ("year".equalsIgnoreCase(plan.getValidityUnit()) ? z.plusYears(plan.getValidityValue()) : z.plusMonths(plan.getValidityValue()));
         UserSubscription item = old == null ? new UserSubscription() : old;
-        item.setUserId(userId); item.setPlanId(planId); item.setStartsAt(now); item.setExpiresAt(expiry.toInstant().toEpochMilli());
+        item.setUserId(userId); item.setPlanId(planId); item.setStartsAt(now); item.setExpiresAt(permanent ? 0L : expiry.toInstant().toEpochMilli());
         item.setTrafficLimitBytes(plan.getTrafficBytes()); item.setTrafficUsedBytes(0L); item.setNextResetAt(nextReset(now, plan.getResetDay()));
         item.setMaxForwards(plan.getMaxForwards()); item.setUsedForwards(old == null ? 0 : old.getUsedForwards()); item.setStatus(1); item.setUpdatedTime(now);
         if (old == null) { item.setCreatedTime(now); subscriptions.insert(item); } else subscriptions.updateById(item);
@@ -211,6 +212,7 @@ public class SubscriptionService {
     }
 
     static long calculateNextReset(long from, int day, ZoneId zone) {
+        if (day <= 0) return 0L;
         int requestedDay = Math.min(31, Math.max(1, day));
         ZonedDateTime now = Instant.ofEpochMilli(from).atZone(zone);
         ZonedDateTime candidate = resetAtMonth(now, requestedDay);
