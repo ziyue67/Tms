@@ -55,6 +55,7 @@ import { copyTextToClipboard } from '@/utils/clipboard';
 import { SubQrToggle } from '@/components/sub-qr';
 import { SearchIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/components/icons';
 import { parseDate } from "@internationalized/date";
+import { useNavigate } from "react-router-dom";
 
 
 // 工具函数
@@ -108,6 +109,7 @@ const calculateTunnelUsedFlow = (tunnel: UserTunnel): number => {
 };
 
 export default function UserPage() {
+  const navigate = useNavigate();
   // 状态管理
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -789,8 +791,17 @@ export default function UserPage() {
                       </Button>
                     </div>
 
-                    {/* 第三行:订阅链接(合体面板:该车友所有协议的订阅) */}
+                    {/* 第三行：套餐和订阅链接 */}
                     <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="primary"
+                        onPress={() => navigate(`/admin/subscription?userId=${user.id}`)}
+                        className="flex-1 min-h-8"
+                      >
+                        套餐管理
+                      </Button>
                       <Button
                         size="sm"
                         variant="flat"
@@ -798,7 +809,7 @@ export default function UserPage() {
                         onPress={() => handleShowSub(user)}
                         className="flex-1 min-h-8"
                       >
-                        🔗 订阅链接
+                        订阅链接
                       </Button>
                     </div>
                   </div>

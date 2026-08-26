@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Input } from "@heroui/input";
@@ -15,9 +16,11 @@ const validity = (p: any) => p.validityUnit === "permanent" ? "永久" : `${p.va
 const localDateTime = (value: any) => { if (!value || Number(value) === 0) return ""; const date = new Date(Number(value)); const offset = date.getTimezoneOffset(); return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16); };
 
 export default function AdminSubscriptionPage() {
+  const [searchParams] = useSearchParams();
   const [plans, setPlans] = useState<any[]>([]), [codes, setCodes] = useState<any[]>([]), [orders, setOrders] = useState<any[]>([]), [form, setForm] = useState(empty), [editing, setEditing] = useState<string | null>(null), [selected, setSelected] = useState(""), [count, setCount] = useState("10"), [generated, setGenerated] = useState(""), [userId, setUserId] = useState(""), [subscription, setSubscription] = useState<any>(null), [audit, setAudit] = useState<any[]>([]), [userEditing, setUserEditing] = useState(false), [userForm, setUserForm] = useState({ planId: "", expiresAt: "", trafficGb: "0", usedGb: "0", maxForwards: "0", status: true });
   const load = async () => { const [a,b,c] = await Promise.all([getAdminPlans(), getAdminRedeemCodes(), getAdminPaymentOrders()]); if (a.code === 0) setPlans(a.data || []); if (b.code === 0) setCodes(b.data || []); if (c.code === 0) setOrders(c.data || []); };
   useEffect(() => { load(); }, []);
+  useEffect(() => { const id = searchParams.get("userId"); if (!id) return; setUserId(id); Promise.all([getAdminSubscriptionUser(id), getAdminSubscriptionAudit(id)]).then(([r, logs]) => { if (r.code === 0 && r.data) { setSubscription(r.data); setUserForm({ planId: String(r.data.planId || ""), expiresAt: localDateTime(r.data.expiresAt), trafficGb: String(r.data.trafficLimitBytes ? Number(r.data.trafficLimitBytes) / 1073741824 : 0), usedGb: String(r.data.trafficUsedBytes ? Number(r.data.trafficUsedBytes) / 1073741824 : 0), maxForwards: String(r.data.maxForwards || 0), status: Number(r.data.status) === 1 }); } else { setSubscription(null); toast.error(r.msg || "未找到套餐"); } if (logs.code === 0) setAudit(logs.data || []); }); }, [searchParams]);
   const set = (k: keyof typeof empty, v: any) => setForm(x => ({ ...x, [k]: v }));
   const replacePlan = (next: any) => setPlans(current => current.map(plan => String(plan.id) === String(next.id) ? next : plan));
   const save = async () => { const r = editing ? await updateAdminPlan(editing, payload(form)) : await createAdminPlan(payload(form)); if (r.code === 0) { if (editing && r.data) replacePlan(r.data); else if (r.data) setPlans(current => [...current, r.data]); toast.success(editing ? "套餐已更新" : "套餐已创建"); setEditing(null); setForm(empty); load(); } else toast.error(r.msg || "保存失败"); };
