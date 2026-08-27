@@ -266,7 +266,7 @@ export default function ProfilePage() {
           </CardBody>
         </Card>
 
-        <div className="fixed inset-x-0 bottom-20 text-center py-4">
+        <div className="relative mt-8 text-center py-4 md:fixed md:inset-x-0 md:bottom-20">
                <p className="text-xs text-gray-400 dark:text-gray-500">
                  Powered by <span className="text-gray-500 dark:text-gray-400">TMS</span>
                </p>

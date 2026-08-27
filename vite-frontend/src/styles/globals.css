@@ -7,6 +7,10 @@ html, body {
   overflow-x: hidden;
 }
 
+#root {
+  min-height: 100%;
+}
+
 /* 现代浏览器使用 100dvh，避免地址栏收起/展开导致的布局跳动 */
 @supports (height: 100dvh) {
   .h-screen {
@@ -36,6 +40,44 @@ html, body {
   
   body {
     overscroll-behavior-y: none;
+  }
+
+  /* The desktop information structure remains intact on phones. Only the
+     navigation becomes a drawer and the content area gets mobile-safe space. */
+  .tms-app-shell {
+    width: 100%;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .tms-sidebar {
+    height: 100dvh !important;
+    padding-top: var(--safe-area-top);
+    padding-bottom: var(--safe-area-bottom);
+  }
+
+  .tms-header {
+    height: calc(3.5rem + var(--safe-area-top));
+    padding-top: var(--safe-area-top);
+  }
+
+  .tms-main {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding-bottom: calc(var(--safe-area-bottom) + 1rem);
+  }
+
+  /* Heroui tables are intentionally scrollable rather than squeezed until
+     their columns become unreadable on 375px-wide screens. */
+  .tms-main .overflow-x-auto {
+    margin-inline: -0.25rem;
+    padding-inline: 0.25rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  [data-overlay-container] [role="dialog"] {
+    max-height: calc(100dvh - var(--safe-area-top) - var(--safe-area-bottom) - 1.5rem);
   }
 }
 

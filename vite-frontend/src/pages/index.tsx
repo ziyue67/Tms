@@ -253,14 +253,14 @@ export default function IndexPage() {
 
   return (
     <DefaultLayout>
-      <section className="flex flex-col items-center justify-center gap-4 py-4 sm:py-8 md:py-10 pb-20 min-h-[calc(100dvh-120px)] sm:min-h-[calc(100dvh-200px)]">
-        <div className="w-full max-w-md px-4 sm:px-0">
-          <Card className="w-full">
-            <CardHeader className="pb-0 pt-6 px-6 flex-col items-center">
+      <section className="flex min-w-0 flex-col items-center justify-center gap-4 py-4 pb-20 sm:py-8 sm:pb-20 md:py-10 min-h-[calc(100dvh-120px)] sm:min-h-[calc(100dvh-200px)]">
+        <div className="w-full min-w-0 max-w-md">
+          <Card className="w-full min-w-0">
+            <CardHeader className="flex-col items-center px-4 pb-0 pt-6 sm:px-6">
               <h1 className={title({ size: "sm" })}>登陆</h1>
               <p className="text-small text-default-500 mt-2">请输入您的账号信息</p>
             </CardHeader>
-            <CardBody className="px-6 py-6">
+            <CardBody className="px-4 py-6 sm:px-6">
               <div className="flex flex-col gap-4">
                 <Input
                   label="用户名"
@@ -297,7 +297,7 @@ export default function IndexPage() {
                 >
                   {loading ? (showCaptcha ? "验证中..." : "登录中...") : "登录"}
                 </Button>
-                <div className="flex items-center justify-between text-sm text-default-500">
+                <div className="flex flex-col items-center gap-2 text-center text-sm text-default-500 sm:flex-row sm:justify-between sm:text-left">
                   <span>没有账号？<Link className="text-primary ml-1" to="/register">注册账号</Link></span>
                   <Link className="text-primary" to="/forgot-password">忘记密码？</Link>
                 </div>

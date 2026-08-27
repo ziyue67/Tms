@@ -343,7 +343,7 @@ export default function AdminLayout({
   );
 
   return (
-          <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen'} bg-transparent`}>
+          <div className={`tms-app-shell flex ${isMobile ? 'min-h-screen' : 'h-screen'} bg-transparent`}>
       {/* 移动端遮罩层 */}
       {isMobile && mobileMenuVisible && (
         <div 
@@ -353,7 +353,7 @@ export default function AdminLayout({
       )}
 
       {/* 左侧菜单栏 */}
-      <aside className={`
+      <aside className={`tms-sidebar
         ${isMobile ? 'fixed' : 'relative'} 
         ${isMobile && !mobileMenuVisible ? '-translate-x-full' : 'translate-x-0'}
         ${isMobile ? 'w-64' : 'w-72'}
@@ -437,7 +437,7 @@ export default function AdminLayout({
       {/* 主内容区域 */}
       <div className={`flex flex-col flex-1 ${isMobile ? 'min-h-0' : 'h-full overflow-hidden'}`}>
                  {/* 顶部导航栏 */}
-         <header className="bg-white/60 dark:bg-black/30 backdrop-blur-xl shadow-md border-b border-gray-200 dark:border-gray-600 h-14 flex items-center justify-between px-4 lg:px-6 relative z-10">
+         <header className="tms-header bg-white/60 dark:bg-black/30 backdrop-blur-xl shadow-md border-b border-gray-200 dark:border-gray-600 h-14 flex items-center justify-between px-4 lg:px-6 relative z-10">
           <div className="flex items-center gap-4">
             {/* 移动端菜单按钮 */}
             {isMobile && (
@@ -498,7 +498,7 @@ export default function AdminLayout({
         </header>
 
         {/* 主内容 */}
-        <main className={`flex-1 bg-transparent ${isMobile ? '' : 'overflow-y-auto'}`}>
+        <main className={`tms-main flex-1 min-w-0 bg-transparent ${isMobile ? '' : 'overflow-y-auto'}`}>
           {children}
         </main>
       </div>
