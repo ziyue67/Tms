@@ -15,6 +15,9 @@ import com.admin.mapper.UserMapper;
 import com.admin.mapper.UserTunnelMapper;
 import com.admin.mapper.UserSubscriptionMapper;
 import com.admin.mapper.SubscriptionPlanMapper;
+import com.admin.mapper.QuotaUsageLogMapper;
+import com.admin.mapper.PaymentOrderMapper;
+import com.admin.mapper.UserCustomNodeMapper;
 import com.admin.service.*;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -26,6 +29,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
@@ -105,6 +109,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Resource private UserSubscriptionMapper userSubscriptionMapper;
     @Resource private SubscriptionPlanMapper subscriptionPlanMapper;
+    @Resource private QuotaUsageLogMapper quotaUsageLogMapper;
+    @Resource private PaymentOrderMapper paymentOrderMapper;
+    @Resource private UserCustomNodeMapper userCustomNodeMapper;
+    @Resource private JdbcTemplate jdbcTemplate;
 
     @Resource
     @Lazy
@@ -263,6 +271,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * @return 删除结果响应
      */
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public R deleteUser(Long id) {
         // 1. 验证删除条件
         R deleteValidationResult = validateUserDeletion(id);
@@ -274,8 +283,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             // 2. 级联删除用户相关数据
             deleteUserRelatedData(id);
             statisticsFlowService.remove(new QueryWrapper<StatisticsFlow>().eq("user_id", id));
-            // 3. 删除用户
-            boolean result = this.removeById(id);
+            // User is mapped to the tms_user compatibility view on PostgreSQL.
+            // Delete the underlying user table row explicitly so this is physical deletion.
+            boolean result = deletePhysicalUserRow(id);
             return result ? R.ok(SUCCESS_DELETE_MSG) : R.err(ERROR_DELETE_FAILED);
             
         } catch (Exception e) {
@@ -570,6 +580,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         } catch (Exception e) {
             System.err.println("删除用户的协议分配/线路记录失败，用户ID: " + userId + ", 错误: " + e.getMessage());
         }
+
+        userSubscriptionMapper.delete(new QueryWrapper<UserSubscription>().eq("user_id", userId));
+        quotaUsageLogMapper.delete(new QueryWrapper<QuotaUsageLog>().eq("user_id", userId));
+        paymentOrderMapper.delete(new QueryWrapper<PaymentOrder>().eq("user_id", userId));
+        userCustomNodeMapper.delete(new QueryWrapper<UserCustomNode>().eq("user_id", userId));
     }
 
     /**
@@ -760,6 +775,39 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userInfo.setSubscriptionExpiresAt(user.getSubscriptionExpiresAt());
         userInfo.setSubscriptionMaxForwards(user.getSubscriptionMaxForwards());
         return userInfo;
+    }
+
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public R deleteCurrentUser() {
+        try {
+            Integer currentId = JwtUtil.getUserIdFromToken();
+            if (currentId == null) return R.err(ERROR_USER_NOT_LOGGED_IN);
+            if (this.getById(currentId) == null) return R.err(ERROR_USER_NOT_FOUND);
+            deleteUserRelatedData(currentId.longValue());
+            statisticsFlowService.remove(new QueryWrapper<StatisticsFlow>().eq("user_id", currentId));
+            if (!deletePhysicalUserRow(currentId.longValue())) return R.err(ERROR_DELETE_FAILED);
+            return R.ok(SUCCESS_DELETE_MSG);
+        } catch (Exception e) {
+            log.warn("自助注销账户失败", e);
+            return R.err("注销账户时发生错误：" + (e.getMessage() == null ? "未知错误" : e.getMessage()));
+        }
+    }
+
+    private boolean deletePhysicalUserRow(Long userId) {
+        try (java.sql.Connection connection = jdbcTemplate.getDataSource().getConnection()) {
+            String product = connection.getMetaData().getDatabaseProductName().toLowerCase(java.util.Locale.ROOT);
+            String table = product.contains("postgres") ? "\"user\"" : "`tms_user`";
+            if (!product.contains("postgres")) {
+                try (java.sql.ResultSet tables = connection.getMetaData().getTables(null, null, "tms_user", new String[]{"TABLE"})) {
+                    if (!tables.next()) table = "`user`";
+                }
+            }
+            return jdbcTemplate.update("DELETE FROM " + table + " WHERE id = ?", userId) == 1;
+        } catch (Exception e) {
+            log.warn("物理删除用户记录失败，userId={}", userId, e);
+            return false;
+        }
     }
 
     private void attachSubscription(User user) {

@@ -66,6 +66,12 @@ public class UserController extends BaseController {
     }
 
     @LogAnnotation
+    @DeleteMapping("/account")
+    public R deleteCurrentAccount() {
+        return userService.deleteCurrentUser();
+    }
+
+    @LogAnnotation
     @PostMapping("/updatePassword")
     public R updatePassword(@Validated @RequestBody ChangePasswordDto changePasswordDto) {
         return userService.updatePassword(changePasswordDto);

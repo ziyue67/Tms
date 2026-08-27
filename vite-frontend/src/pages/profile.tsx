@@ -7,7 +7,7 @@ import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { isWebViewFunc } from '@/utils/panel';
 import { siteConfig } from '@/config/site';
-import { updatePassword } from '@/api';
+import { updatePassword, deleteCurrentAccount } from '@/api';
 import { safeLogout } from '@/utils/logout';
 interface PasswordForm {
   newUsername: string;
@@ -28,6 +28,7 @@ interface MenuItem {
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
+  const accountDeleteModal = useDisclosure();
   const [username, setUsername] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
@@ -96,6 +97,22 @@ export default function ProfilePage() {
   const handleLogout = () => {
     safeLogout();
     navigate('/', { replace: true });
+  };
+
+  const handleDeleteAccount = async () => {
+    try {
+      const response = await deleteCurrentAccount();
+      if (response.code !== 0) {
+        toast.error(response.msg || '注销失败');
+        return;
+      }
+      accountDeleteModal.onClose();
+      safeLogout();
+      toast.success('账户已注销');
+      navigate('/', { replace: true });
+    } catch {
+      toast.error('注销失败，请稍后重试');
+    }
   };
 
   // 密码表单验证
@@ -224,6 +241,17 @@ export default function ProfilePage() {
               
               {/* 退出登录 */}
               <button
+                onClick={accountDeleteModal.onOpen}
+                className="flex flex-col items-center p-3 rounded-2xl bg-gray-50 dark:bg-default-100 hover:bg-danger-50 dark:hover:bg-danger-500/10 transition-colors duration-200"
+              >
+                <div className="w-10 h-10 bg-danger-100 dark:bg-danger-500/20 text-danger-600 dark:text-danger-400 rounded-full flex items-center justify-center mb-2">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9 2a1 1 0 01.894.553l.724 1.447H16a1 1 0 011 1v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1h5.382l.724-1.447A1 1 0 019 2zm-3 6a1 1 0 012 0v5a1 1 0 11-2 0V8zm6 0a1 1 0 10-2 0v5a1 1 0 102 0V8z" clipRule="evenodd" /></svg>
+                </div>
+                <span className="text-xs text-danger-600 text-center">注销账户</span>
+              </button>
+
+              {/* 退出登录 */}
+              <button
                 onClick={handleLogout}
                 className="flex flex-col items-center p-3 rounded-2xl bg-gray-50 dark:bg-default-100 hover:bg-gray-100 dark:hover:bg-default-200 transition-colors duration-200"
               >
@@ -318,6 +346,21 @@ export default function ProfilePage() {
               </ModalFooter>
             </>
           )}
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={accountDeleteModal.isOpen} onOpenChange={accountDeleteModal.onOpenChange} size="md" backdrop="blur">
+        <ModalContent>
+          {(onClose) => <>
+            <ModalHeader>确认注销账户</ModalHeader>
+            <ModalBody>
+              <p>确认要注销吗？注销后账户、套餐、兑换记录和线路数据将从数据库永久删除，无法恢复。</p>
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="light" onPress={onClose}>取消</Button>
+              <Button color="danger" onPress={handleDeleteAccount}>确认注销</Button>
+            </ModalFooter>
+          </>}
         </ModalContent>
       </Modal>
     </div>

@@ -70,6 +70,22 @@ interface NodeForm {
   socks: number; // 0 关 1 开
 }
 
+const numeric = (value: unknown): number => {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+/** Accept both the Go reporter's snake_case payload and older camelCase samples. */
+const normalizeSystemInfo = (raw: any) => ({
+  cpuUsage: numeric(raw?.cpu_usage ?? raw?.cpuUsage),
+  memoryUsage: numeric(raw?.memory_usage ?? raw?.memoryUsage),
+  uploadTraffic: numeric(raw?.bytes_transmitted ?? raw?.bytesTransmitted ?? raw?.uploadTraffic),
+  downloadTraffic: numeric(raw?.bytes_received ?? raw?.bytesReceived ?? raw?.downloadTraffic),
+  uploadSpeed: numeric(raw?.upload_speed ?? raw?.uploadSpeed),
+  downloadSpeed: numeric(raw?.download_speed ?? raw?.downloadSpeed),
+  uptime: numeric(raw?.uptime)
+});
+
 export default function NodePage() {
   const [nodeList, setNodeList] = useState<Node[]>([]);
   const [loading, setLoading] = useState(false);
@@ -109,8 +125,10 @@ export default function NodePage() {
   useEffect(() => {
     loadNodes();
     initWebSocket();
+    const refreshTimer = window.setInterval(loadNodes, 10000);
     
     return () => {
+      window.clearInterval(refreshTimer);
       closeWebSocket();
     };
   }, []);
@@ -124,15 +142,7 @@ export default function NodePage() {
         setNodeList(res.data.map((node: any) => ({
           ...node,
           connectionStatus: node.status === 1 ? 'online' : 'offline',
-          systemInfo: node.systemInfo ? {
-            cpuUsage: parseFloat(node.systemInfo.cpu_usage) || 0,
-            memoryUsage: parseFloat(node.systemInfo.memory_usage) || 0,
-            uploadTraffic: parseInt(node.systemInfo.bytes_transmitted) || 0,
-            downloadTraffic: parseInt(node.systemInfo.bytes_received) || 0,
-            uploadSpeed: 0,
-            downloadSpeed: 0,
-            uptime: parseInt(node.systemInfo.uptime) || 0,
-          } : null,
+          systemInfo: node.systemInfo ? normalizeSystemInfo(node.systemInfo) : null,
           copyLoading: false
         })));
       } else {
@@ -216,9 +226,10 @@ export default function NodePage() {
               systemInfo = messageData;
             }
             
-            const currentUpload = parseInt(systemInfo.bytes_transmitted) || 0;
-            const currentDownload = parseInt(systemInfo.bytes_received) || 0;
-            const currentUptime = parseInt(systemInfo.uptime) || 0;
+            const normalized = normalizeSystemInfo(systemInfo);
+            const currentUpload = normalized.uploadTraffic;
+            const currentDownload = normalized.downloadTraffic;
+            const currentUptime = normalized.uptime;
             
             let uploadSpeed = 0;
             let downloadSpeed = 0;
@@ -254,8 +265,8 @@ export default function NodePage() {
                 ? systemInfo.singbox_running
                 : node.singboxRunning,
               systemInfo: {
-                cpuUsage: parseFloat(systemInfo.cpu_usage) || 0,
-                memoryUsage: parseFloat(systemInfo.memory_usage) || 0,
+                cpuUsage: normalized.cpuUsage,
+                memoryUsage: normalized.memoryUsage,
                 uploadTraffic: currentUpload,
                 downloadTraffic: currentDownload,
                 uploadSpeed: uploadSpeed,
