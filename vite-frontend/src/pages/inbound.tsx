@@ -46,6 +46,8 @@ export default function InboundPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [speedRules, setSpeedRules] = useState<any[]>([]);
   const [customNodes, setCustomNodes] = useState<any[]>([]);
+  const [selectedCustomNodeIds, setSelectedCustomNodeIds] = useState<Set<string>>(new Set());
+  const [customBulkLoading, setCustomBulkLoading] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [customForm, setCustomForm] = useState<{ name: string; link: string; visibility: "global" | "users"; userIds: string[]; ingressNodeId: number | null; sni: string }>({ name: "", link: "", visibility: "global", userIds: [], ingressNodeId: null, sni: DEFAULT_SNI });
   const [customLoading, setCustomLoading] = useState(false);
@@ -330,6 +332,57 @@ export default function InboundPage() {
     toast.error(response.msg || "删除失败");
   };
 
+  const toggleCustomNodeSelection = (nodeId: string | number, checked: boolean) => {
+    setSelectedCustomNodeIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(String(nodeId)); else next.delete(String(nodeId));
+      return next;
+    });
+  };
+
+  const toggleAllCustomNodeSelection = (checked: boolean) => {
+    setSelectedCustomNodeIds(checked ? new Set(customNodes.map((node) => String(node.id))) : new Set());
+  };
+
+  const bulkUpdateCustomNodeStatus = async (status: 0 | 1) => {
+    const selected = customNodes.filter((node) => selectedCustomNodeIds.has(String(node.id)));
+    if (!selected.length) return toast.error("请先选择节点");
+    setCustomBulkLoading(true);
+    try {
+      const responses = await Promise.all(selected.map((node) => status === 1 ? enableCustomNode(node.id) : disableCustomNode(node.id)));
+      const failures = responses.filter((response) => response.code !== 0 && !isMissingCustomNode(response));
+      setCustomNodes((current) => current.map((node) => selectedCustomNodeIds.has(String(node.id)) ? { ...node, status } : node));
+      setSelectedCustomNodeIds(new Set());
+      if (failures.length) toast.error(`${selected.length - failures.length} 个已处理，${failures.length} 个失败`);
+      else toast.success(status === 1 ? `已批量启用 ${selected.length} 个节点` : `已批量停用 ${selected.length} 个节点`);
+      await loadAll();
+    } catch (error) {
+      toast.error(status === 1 ? "批量启用失败" : "批量停用失败");
+    } finally {
+      setCustomBulkLoading(false);
+    }
+  };
+
+  const bulkDeleteCustomNodes = async () => {
+    const selected = customNodes.filter((node) => selectedCustomNodeIds.has(String(node.id)));
+    if (!selected.length) return toast.error("请先选择节点");
+    if (!window.confirm(`永久删除选中的 ${selected.length} 个自定义节点？此操作不可恢复`)) return;
+    setCustomBulkLoading(true);
+    try {
+      const responses = await Promise.all(selected.map((node) => deleteCustomNode(node.id)));
+      const failures = responses.filter((response) => response.code !== 0 && !isMissingCustomNode(response));
+      setCustomNodes((current) => current.filter((node) => !selectedCustomNodeIds.has(String(node.id))));
+      setSelectedCustomNodeIds(new Set());
+      if (failures.length) toast.error(`${selected.length - failures.length} 个已删除，${failures.length} 个失败`);
+      else toast.success(`已删除 ${selected.length} 个节点`);
+      await loadAll();
+    } catch (error) {
+      toast.error("批量删除失败");
+    } finally {
+      setCustomBulkLoading(false);
+    }
+  };
+
   // 协议管理只管【直连】协议(landingId 为空);中转的协议在「中转」页管
   const machineNodes = nodes.filter((n) => inbounds.some((ib) => ib.nodeId === n.id && !ib.landingId));
 
@@ -475,25 +528,38 @@ export default function InboundPage() {
         <div className="text-center text-default-400 py-8">还没有协议,点右上角「⚡ 一键搭建整机协议」在某台机器上把全套协议建出来</div>
       )}
 
-      {customNodes.length > 0 && <Card>
+      <Card>
         <CardBody className="space-y-3">
-          <div className="font-semibold">自定义订阅节点</div>
-            <div className="text-xs text-default-500">外部订阅默认直连，不能识别具体用户流量，也不会创建中转或计费转发。</div>
-          {customNodes.map((node) => <div key={node.id} className="flex flex-wrap items-center gap-2 border-t border-divider pt-3">
-            <Chip size="sm" color={node.status === 1 ? "success" : "default"}>{({ vless: "VLESS-Reality", trojan: "Trojan-Reality", vmess: "VMess", hysteria2: "Hysteria2", tuic: "TUIC", anytls: "AnyTLS" } as any)[node.protocol] || node.protocol}</Chip>
-            <span className="font-medium">{node.name}</span>
-            <Chip size="sm" variant="flat" color={node.status === 1 ? "success" : "default"}>{node.status === 1 ? "已启用" : "已停用"}</Chip>
-            <Chip size="sm" variant="flat" color="primary">{node.visibility === "users" ? `按用户 (${(node.userIds || []).length})` : "全局聚合"}</Chip>
-            {node.visibility === "users" && (node.userIds || []).map((id: number) => {
-              const user = users.find((u) => Number(u.id) === Number(id));
-              return <Chip key={id} size="sm" variant="flat">{user?.user || `用户 #${id}`}</Chip>;
-            })}
-            {node.status === 1 && <Button size="sm" color="warning" variant="flat" onPress={() => { if (window.confirm(`停用「${node.name}」？`)) void updateCustomNodeStatus(node, 0); }}>停用</Button>}
-            {node.status !== 1 && <Button size="sm" color="success" variant="flat" onPress={() => void updateCustomNodeStatus(node, 1)}>启用</Button>}
-            <Button size="sm" color="danger" variant="flat" onPress={() => { if (window.confirm(`永久删除「${node.name}」？此操作不可恢复`)) void deleteCustomNodeFromPage(node); }}>删除</Button>
-          </div>)}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="font-semibold mr-auto">自定义订阅节点</div>
+            <Button size="sm" variant="bordered" onPress={() => setCustomOpen(true)}>批量导入节点</Button>
+            <Button size="sm" color="success" variant="flat" isDisabled={!selectedCustomNodeIds.size || customBulkLoading} onPress={() => void bulkUpdateCustomNodeStatus(1)}>批量启用</Button>
+            <Button size="sm" color="warning" variant="flat" isDisabled={!selectedCustomNodeIds.size || customBulkLoading} onPress={() => void bulkUpdateCustomNodeStatus(0)}>批量停用</Button>
+            <Button size="sm" color="danger" variant="flat" isDisabled={!selectedCustomNodeIds.size || customBulkLoading} onPress={() => void bulkDeleteCustomNodes()}>批量删除</Button>
+          </div>
+          <div className="text-xs text-default-500">外部订阅默认直连，不能识别具体用户流量，也不会创建中转或计费转发。</div>
+          {customNodes.length > 0 ? <>
+            <label className="flex items-center gap-2 text-xs text-default-500">
+              <input type="checkbox" checked={customNodes.length > 0 && selectedCustomNodeIds.size === customNodes.length} onChange={(event) => toggleAllCustomNodeSelection(event.target.checked)} />
+              全选节点（已选 {selectedCustomNodeIds.size} 个）
+            </label>
+            {customNodes.map((node) => <div key={node.id} className="flex flex-wrap items-center gap-2 border-t border-divider pt-3">
+              <input type="checkbox" aria-label={`选择 ${node.name}`} checked={selectedCustomNodeIds.has(String(node.id))} onChange={(event) => toggleCustomNodeSelection(node.id, event.target.checked)} />
+              <Chip size="sm" color={node.status === 1 ? "success" : "default"}>{({ vless: "VLESS-Reality", trojan: "Trojan-Reality", vmess: "VMess", shadowsocks: "Shadowsocks", hysteria2: "Hysteria2", tuic: "TUIC", anytls: "AnyTLS" } as any)[node.protocol] || node.protocol}</Chip>
+              <span className="font-medium">{node.name}</span>
+              <Chip size="sm" variant="flat" color={node.status === 1 ? "success" : "default"}>{node.status === 1 ? "已启用" : "已停用"}</Chip>
+              <Chip size="sm" variant="flat" color="primary">{node.visibility === "users" ? `按用户 (${(node.userIds || []).length})` : "全局聚合"}</Chip>
+              {node.visibility === "users" && (node.userIds || []).map((id: number) => {
+                const user = users.find((u) => Number(u.id) === Number(id));
+                return <Chip key={id} size="sm" variant="flat">{user?.user || `用户 #${id}`}</Chip>;
+              })}
+              {node.status === 1 && <Button size="sm" color="warning" variant="flat" onPress={() => { if (window.confirm(`停用「${node.name}」？`)) void updateCustomNodeStatus(node, 0); }}>停用</Button>}
+              {node.status !== 1 && <Button size="sm" color="success" variant="flat" onPress={() => void updateCustomNodeStatus(node, 1)}>启用</Button>}
+              <Button size="sm" color="danger" variant="flat" onPress={() => { if (window.confirm(`永久删除「${node.name}」？此操作不可恢复`)) void deleteCustomNodeFromPage(node); }}>删除</Button>
+            </div>)}
+          </> : <div className="text-sm text-default-400 py-3">暂无自定义节点，点击“批量导入节点”后每行粘贴一个协议链接。</div>}
         </CardBody>
-      </Card>}
+      </Card>
 
       {/* 「我自己用」结果:直接把订阅链接给出来,不用再去用户管理找 */}
       <Modal isOpen={selfOpen} onClose={() => setSelfOpen(false)} size="2xl">
