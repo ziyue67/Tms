@@ -7,7 +7,7 @@ import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { isWebViewFunc } from '@/utils/panel';
 import { siteConfig } from '@/config/site';
-import { updatePassword, deleteCurrentAccount } from '@/api';
+import { updatePassword, deleteCurrentAccount, getCurrentSubscription, getUserPackageInfo } from '@/api';
 import { safeLogout } from '@/utils/logout';
 interface PasswordForm {
   newUsername: string;
@@ -31,6 +31,9 @@ export default function ProfilePage() {
   const accountDeleteModal = useDisclosure();
   const [username, setUsername] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [account, setAccount] = useState<any>(null);
+  const [subscription, setSubscription] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordForm, setPasswordForm] = useState<PasswordForm>({
     newUsername: '',
@@ -54,6 +57,10 @@ export default function ProfilePage() {
     
     setUsername(name);
     setIsAdmin(adminFlag);
+    Promise.all([getUserPackageInfo(), getCurrentSubscription()]).then(([pkg, sub]) => {
+      if (pkg.code === 0) setAccount(pkg.data?.userInfo || null);
+      if (sub.code === 0) setSubscription(sub.data || null);
+    }).catch(() => {});
   }, []);
 
   // 管理员菜单项
@@ -100,6 +107,7 @@ export default function ProfilePage() {
   };
 
   const handleDeleteAccount = async () => {
+    setDeleting(true);
     try {
       const response = await deleteCurrentAccount();
       if (response.code !== 0) {
@@ -112,8 +120,22 @@ export default function ProfilePage() {
       navigate('/', { replace: true });
     } catch {
       toast.error('注销失败，请稍后重试');
+    } finally {
+      setDeleting(false);
     }
   };
+
+  const formatBytes = (value: any) => {
+    const bytes = Number(value || 0);
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+    return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+  };
+
+  const subscriptionExpiry = subscription?.expiresAt ?? account?.subscriptionExpiresAt;
+  const subscriptionLimit = subscription?.totalTrafficBytes ?? account?.subscriptionTrafficLimitBytes;
+  const subscriptionUsed = subscription?.usedTrafficBytes ?? account?.subscriptionTrafficUsedBytes;
 
   // 密码表单验证
   const validatePasswordForm = (): boolean => {
@@ -177,19 +199,24 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="px-3 lg:px-6 py-8 flex flex-col h-full">
+    <div className="p-4 space-y-4 max-w-4xl">
 
-      <div className="space-y-6 flex-1">
+      <div>
+        <h1 className="text-xl font-bold">我的账户</h1>
+        <p className="text-sm text-default-500">查看账户信息、当前订阅和账户安全设置。</p>
+      </div>
+
+      <div className="space-y-4">
         {/* 用户信息卡片 */}
         <Card className="border border-gray-200 dark:border-default-200 shadow-md hover:shadow-lg transition-shadow">
           <CardBody className="p-4">
-            <div className="flex items-center space-x-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
               <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
                 <svg className="w-6 h-6 text-primary" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
                 </svg>
               </div>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <h3 className="text-base font-medium text-foreground">{username}</h3>
                 <div className="flex items-center space-x-2 mt-1">
                   <span className={`px-2 py-1 rounded-md text-xs font-medium ${
@@ -199,12 +226,19 @@ export default function ProfilePage() {
                   }`}>
                     {isAdmin ? '管理员' : '普通用户'}
                   </span>
-                  <span className="text-xs text-default-500">
-                    {new Date().toLocaleDateString('zh-CN')}
-                  </span>
                 </div>
+                <div className="mt-2 break-all text-sm text-default-500">邮箱：{account?.email || '未绑定邮箱'}</div>
               </div>
             </div>
+          </CardBody>
+        </Card>
+
+        <Card className="border border-gray-200 dark:border-default-200 shadow-md">
+          <CardBody className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div><div className="text-xs text-default-500">当前套餐</div><b>{subscription?.planName || account?.subscriptionPlanName || '未开通套餐'}</b></div>
+            <div><div className="text-xs text-default-500">套餐流量</div><b>{Number(subscriptionLimit || 0) > 0 ? formatBytes(subscriptionLimit) : '不限'}</b></div>
+            <div><div className="text-xs text-default-500">已用流量</div><b>{formatBytes(subscriptionUsed)}</b></div>
+            <div><div className="text-xs text-default-500">到期时间</div><b>{subscriptionExpiry === 0 ? '永久' : subscriptionExpiry ? new Date(subscriptionExpiry).toLocaleString() : '-'}</b></div>
           </CardBody>
         </Card>
 
@@ -239,7 +273,7 @@ export default function ProfilePage() {
                 <span className="text-xs text-foreground text-center">修改密码</span>
               </button>
               
-              {/* 退出登录 */}
+              {/* 注销账户 */}
               <button
                 onClick={accountDeleteModal.onOpen}
                 className="flex flex-col items-center p-3 rounded-2xl bg-gray-50 dark:bg-default-100 hover:bg-danger-50 dark:hover:bg-danger-500/10 transition-colors duration-200"
@@ -352,13 +386,13 @@ export default function ProfilePage() {
       <Modal isOpen={accountDeleteModal.isOpen} onOpenChange={accountDeleteModal.onOpenChange} size="md" backdrop="blur">
         <ModalContent>
           {(onClose) => <>
-            <ModalHeader>确认注销账户</ModalHeader>
+            <ModalHeader>确认删除账户</ModalHeader>
             <ModalBody>
-              <p>确认要注销吗？注销后账户、套餐、兑换记录和线路数据将从数据库永久删除，无法恢复。</p>
+              <p>确定要删除用户 <strong>“{username || '用户账户'}”</strong> 吗？此操作不可撤销，用户的所有数据将被永久删除。</p>
             </ModalBody>
             <ModalFooter>
               <Button variant="light" onPress={onClose}>取消</Button>
-              <Button color="danger" onPress={handleDeleteAccount}>确认注销</Button>
+              <Button color="danger" onPress={handleDeleteAccount} isLoading={deleting}>确认删除</Button>
             </ModalFooter>
           </>}
         </ModalContent>

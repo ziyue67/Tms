@@ -755,6 +755,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         UserPackageDto.UserInfoDto userInfo = new UserPackageDto.UserInfoDto();
         userInfo.setId(user.getId());
         userInfo.setUser(user.getUser());
+        userInfo.setEmail(user.getEmail());
         userInfo.setStatus(user.getStatus());
         userInfo.setFlow(user.getFlow());
         userInfo.setInFlow(user.getInFlow());

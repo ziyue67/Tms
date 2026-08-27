@@ -39,6 +39,7 @@ public class UserPackageDto {
         private Long id;
         private String name;
         private String user;
+        private String email;
         private Integer status;
         private Long flow;           // 总流量配额(GB)
         private Long inFlow;         // 已用入站流量(字节)

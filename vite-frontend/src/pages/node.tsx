@@ -52,6 +52,7 @@ interface Node {
     downloadTraffic: number;
     uploadSpeed: number;
     downloadSpeed: number;
+    reportedAt: number;
     uptime: number;
   } | null;
   copyLoading?: boolean;
@@ -83,6 +84,7 @@ const normalizeSystemInfo = (raw: any) => ({
   downloadTraffic: numeric(raw?.bytes_received ?? raw?.bytesReceived ?? raw?.downloadTraffic),
   uploadSpeed: numeric(raw?.upload_speed ?? raw?.uploadSpeed),
   downloadSpeed: numeric(raw?.download_speed ?? raw?.downloadSpeed),
+  reportedAt: numeric(raw?.reported_at ?? raw?.reportedAt ?? raw?.timestamp),
   uptime: numeric(raw?.uptime)
 });
 
@@ -229,15 +231,15 @@ export default function NodePage() {
             const normalized = normalizeSystemInfo(systemInfo);
             const currentUpload = normalized.uploadTraffic;
             const currentDownload = normalized.downloadTraffic;
-            const currentUptime = normalized.uptime;
+            const currentReportedAt = normalized.reportedAt || Date.now();
             
-            let uploadSpeed = 0;
-            let downloadSpeed = 0;
+            let uploadSpeed = normalized.uploadSpeed;
+            let downloadSpeed = normalized.downloadSpeed;
             
-            if (node.systemInfo && node.systemInfo.uptime) {
-              const timeDiff = currentUptime - node.systemInfo.uptime;
+            if (node.systemInfo && node.systemInfo.reportedAt && uploadSpeed === 0 && downloadSpeed === 0) {
+              const timeDiff = (currentReportedAt - node.systemInfo.reportedAt) / 1000;
               
-              if (timeDiff > 0 && timeDiff <= 10) {
+              if (timeDiff >= 0.25 && timeDiff <= 30) {
                 const lastUpload = node.systemInfo.uploadTraffic || 0;
                 const lastDownload = node.systemInfo.downloadTraffic || 0;
                 
@@ -271,7 +273,8 @@ export default function NodePage() {
                 downloadTraffic: currentDownload,
                 uploadSpeed: uploadSpeed,
                 downloadSpeed: downloadSpeed,
-                uptime: currentUptime
+                reportedAt: currentReportedAt,
+                uptime: normalized.uptime
               }
             };
           } catch (error) {

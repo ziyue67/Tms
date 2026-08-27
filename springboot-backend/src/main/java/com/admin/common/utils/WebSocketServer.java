@@ -165,8 +165,9 @@ public class WebSocketServer extends TextWebSocketHandler {
                 // 如果是节点类型，转发消息给其他会话
                 if (Objects.equals(type, "1")) {
                     // 顺手记下 sing-box 运行状态(节点在系统信息里带上来的)
+                    JSONObject info = null;
                     try {
-                        JSONObject info = JSON.parseObject(decryptedPayload);
+                        info = JSON.parseObject(decryptedPayload);
                         if (info != null && info.containsKey("singbox_installed")) {
                             singboxInstalled.put(Long.valueOf(id), info.getBooleanValue("singbox_installed"));
                         }
@@ -187,13 +188,36 @@ public class WebSocketServer extends TextWebSocketHandler {
                             singboxRunning.put(Long.valueOf(id), info.getBooleanValue("singbox_running"));
                         }
                         if (info != null && info.containsKey("memory_usage")) {
+                            Long nodeId = Long.valueOf(id);
+                            long now = System.currentTimeMillis();
+                            long upload = nonNegativeLong(info.get("bytes_transmitted"));
+                            long download = nonNegativeLong(info.get("bytes_received"));
+                            Map<String, Object> previous = latestSystemInfo.get(nodeId);
+                            long previousAt = previous == null ? 0L : nonNegativeLong(previous.get("reported_at"));
+                            long elapsed = now - previousAt;
+                            double uploadSpeed = 0D;
+                            double downloadSpeed = 0D;
+                            if (elapsed >= 250L && elapsed <= 60_000L) {
+                                long previousUpload = nonNegativeLong(previous.get("bytes_transmitted"));
+                                long previousDownload = nonNegativeLong(previous.get("bytes_received"));
+                                if (upload >= previousUpload) uploadSpeed = (upload - previousUpload) * 1000D / elapsed;
+                                if (download >= previousDownload) downloadSpeed = (download - previousDownload) * 1000D / elapsed;
+                            }
                             Map<String, Object> sample = new LinkedHashMap<>();
                             sample.put("cpu_usage", info.get("cpu_usage"));
                             sample.put("memory_usage", info.get("memory_usage"));
-                            sample.put("bytes_received", info.get("bytes_received"));
-                            sample.put("bytes_transmitted", info.get("bytes_transmitted"));
+                            sample.put("bytes_received", download);
+                            sample.put("bytes_transmitted", upload);
+                            sample.put("upload_speed", uploadSpeed);
+                            sample.put("download_speed", downloadSpeed);
+                            sample.put("reported_at", now);
                             sample.put("uptime", info.get("uptime"));
-                            latestSystemInfo.put(Long.valueOf(id), sample);
+                            latestSystemInfo.put(nodeId, sample);
+                            // The agent only reports byte totals. Attach the server-calculated
+                            // rates before broadcasting so connected browser cards update too.
+                            info.put("upload_speed", uploadSpeed);
+                            info.put("download_speed", downloadSpeed);
+                            info.put("reported_at", now);
                         }
                     } catch (Exception ignored) {
                         // 上报格式不对不影响广播,忽略
@@ -201,7 +225,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                     JSONObject jsonObject = new JSONObject();
                     jsonObject.put("id", id);
                     jsonObject.put("type", "info");
-                    jsonObject.put("data", decryptedPayload);
+                    jsonObject.put("data", info == null ? decryptedPayload : info.toJSONString());
                     String broadcastMessage = jsonObject.toJSONString();
                     
                     // 异步处理广播消息，避免阻塞当前线程
@@ -215,6 +239,12 @@ public class WebSocketServer extends TextWebSocketHandler {
         } catch (Exception e) {
             log.info("处理WebSocket消息时发生异常: {}", e.getMessage(), e);
         }
+    }
+
+    private static long nonNegativeLong(Object value) {
+        if (value instanceof Number) return Math.max(0L, ((Number) value).longValue());
+        try { return Math.max(0L, Long.parseLong(String.valueOf(value))); }
+        catch (Exception ignored) { return 0L; }
     }
 
     /**

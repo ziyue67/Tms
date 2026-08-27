@@ -73,6 +73,7 @@ export default function AdminLayout({
   // 菜单项配置
   const menuItems: MenuItem[] = [
     { path: '/dashboard', label: '仪表板', icon: <span className="text-lg">⌂</span>, userOnly: true },
+    { path: '/profile', label: '我的账户', icon: <span className="text-lg">◉</span>, userOnly: true },
     { path: '/purchase', label: '充值/订阅', icon: <span className="text-lg">￥</span>, userOnly: true },
     { path: '/my-orders', label: '我的订单', icon: <span className="text-lg">▤</span>, userOnly: true },
     { path: '/redeem', label: '兑换', icon: <span className="text-lg">◇</span>, userOnly: true },
@@ -196,6 +197,7 @@ export default function AdminLayout({
   // 侧栏显示顺序(改这一行就能调顺序,不用挪上面那些带图标的大块)
   const MENU_ORDER = [
     '/dashboard',   // 0 仪表板
+    '/profile',
     '/my-sub',      // 车友专属,管理员看不到
     '/purchase',
     '/my-orders',
