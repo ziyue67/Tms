@@ -1507,7 +1507,7 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
      * 给 hybrid 转发分配公网端口。默认节点优先用 20000-39999，避免低端口；
      * 但管理员为节点配置了专用端口范围时，必须严格在该范围内分配。
      */
-    private Integer allocateHybridPort(Long nodeId) {
+    private java.util.Set<Integer> usedHybridPorts(Long nodeId) {
         java.util.Set<Integer> used = new java.util.HashSet<>();
         List<Tunnel> tunnels = tunnelMapper.selectList(new QueryWrapper<Tunnel>().eq("in_node_id", nodeId));
         if (tunnels != null && !tunnels.isEmpty()) {
@@ -1522,9 +1522,14 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
                 }
             }
         }
+        return used;
+    }
+
+    private Integer allocateHybridPort(Long nodeId, java.util.Set<Integer> unavailable) {
+        java.util.Set<Integer> used = usedHybridPorts(nodeId);
         int[] range = hybridPortRange(nodeId);
         for (int p = range[0]; p <= range[1]; p++) {
-            if (!used.contains(p)) {
+            if (!used.contains(p) && !unavailable.contains(p)) {
                 return p;
             }
         }
@@ -1573,7 +1578,10 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
      */
     private R createForwardAutoPort(ForwardDto fdto, User user, Long nodeId, java.util.Set<Integer> knownBusy) {
         int[] range = hybridPortRange(nodeId);
-        Integer start = allocateHybridPort(nodeId);
+        // The DB already knows about all panel-managed forwards.  Add them before
+        // retrying so a gap before later assigned ports cannot consume the retry limit.
+        knownBusy.addAll(usedHybridPorts(nodeId));
+        Integer start = allocateHybridPort(nodeId, knownBusy);
         int from = (start != null) ? start : range[0];
         int tried = 0;
         int lastTried = from;
