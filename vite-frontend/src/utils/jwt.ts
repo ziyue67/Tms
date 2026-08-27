@@ -10,6 +10,16 @@ interface JWTPayload {
   iat: number;
 }
 
+function decodeBase64UrlUtf8(value: string): string {
+  const base64 = value
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .padEnd(Math.ceil(value.length / 4) * 4, '=');
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 /**
  * 从JWT Token中获取payload
  * @param token JWT Token
@@ -23,7 +33,7 @@ function getPayloadFromToken(token: string): JWTPayload | null {
     if (parts.length !== 3) return null;
     
     const encodedPayload = parts[1];
-    const decodedPayload = atob(encodedPayload);
+    const decodedPayload = decodeBase64UrlUtf8(encodedPayload);
     return JSON.parse(decodedPayload) as JWTPayload;
   } catch (error) {
     return null;
