@@ -1503,7 +1503,10 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         return R.ok();
     }
 
-    /** 给 hybrid 转发分配高段公网口(20000-39999),避开被占的低端口 + sing-box 段(40000+) */
+    /**
+     * 给 hybrid 转发分配公网端口。默认节点优先用 20000-39999，避免低端口；
+     * 但管理员为节点配置了专用端口范围时，必须严格在该范围内分配。
+     */
     private Integer allocateHybridPort(Long nodeId) {
         java.util.Set<Integer> used = new java.util.HashSet<>();
         List<Tunnel> tunnels = tunnelMapper.selectList(new QueryWrapper<Tunnel>().eq("in_node_id", nodeId));
@@ -1519,12 +1522,23 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
                 }
             }
         }
-        for (int p = 20000; p <= 39999; p++) {
+        int[] range = hybridPortRange(nodeId);
+        for (int p = range[0]; p <= range[1]; p++) {
             if (!used.contains(p)) {
                 return p;
             }
         }
         return null;
+    }
+
+    private int[] hybridPortRange(Long nodeId) {
+        Node node = nodeMapper.selectById(nodeId);
+        int configuredStart = node != null && node.getPortSta() != null ? node.getPortSta() : 20000;
+        int configuredEnd = node != null && node.getPortEnd() != null ? node.getPortEnd() : 39999;
+        if (configuredStart <= 39999 && configuredEnd >= 20000) {
+            return new int[]{Math.max(configuredStart, 20000), Math.min(configuredEnd, 39999)};
+        }
+        return new int[]{configuredStart, configuredEnd};
     }
 
     /**
@@ -1558,11 +1572,12 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
      * 把踩过的坑记下来传给后面的协议,同一个端口只吃一次亏。
      */
     private R createForwardAutoPort(ForwardDto fdto, User user, Long nodeId, java.util.Set<Integer> knownBusy) {
+        int[] range = hybridPortRange(nodeId);
         Integer start = allocateHybridPort(nodeId);
-        int from = (start != null) ? start : 20000;
+        int from = (start != null) ? start : range[0];
         int tried = 0;
         int lastTried = from;
-        for (int p = from; p <= 39999 && tried < MAX_PORT_TRIES; p++) {
+        for (int p = from; p <= range[1] && tried < MAX_PORT_TRIES; p++) {
             if (knownBusy.contains(p)) {
                 continue; // 本次分配里已经确认被占,不用再问节点一次
             }

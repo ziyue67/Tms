@@ -238,7 +238,7 @@ export default function InboundPage() {
       if (response.code !== 0) return toast.error(response.msg || '全局分配失败');
       const data = response.data || {};
       const errors = Array.isArray(data.errors) ? data.errors : [];
-      if (errors.length) toast.error(`已开通 ${data.provisionedUsers || 0} 个用户，${errors.length} 个失败`);
+      if (errors.length) toast.error(`已开通 ${data.provisionedUsers || 0} 个用户，${errors.length} 个失败：${errors[0]}`, { duration: 10000 });
       else toast.success(`已开通 ${data.provisionedUsers || 0} 个套餐用户`);
       loadAll();
     } catch (error) {
@@ -262,7 +262,7 @@ export default function InboundPage() {
       }
       if (enabled) {
         const errors = Array.isArray(response.data?.errors) ? response.data.errors : [];
-        if (errors.length) toast.error(`自动分配已开启；${response.data?.provisionedUsers || 0} 个现有用户已开通，${errors.length} 个失败`);
+        if (errors.length) toast.error(`自动分配已开启；${response.data?.provisionedUsers || 0} 个现有用户已开通，${errors.length} 个失败：${errors[0]}`, { duration: 10000 });
         else toast.success(`已开启「${nodeName}」自动分配，${response.data?.provisionedUsers || 0} 个现有套餐用户已开通`);
       } else {
         toast.success(`已关闭「${nodeName}」自动分配；已分配用户不会受影响`);

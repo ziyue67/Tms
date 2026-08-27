@@ -129,6 +129,15 @@ public class SubscriptionService {
         codes.updateById(code);
     }
 
+    public void deleteRedeemCode(long id) {
+        RedeemCode code = codes.selectById(id);
+        if (code == null) throw new IllegalArgumentException("兑换码不存在");
+        if (code.getStatus() != null && code.getStatus() == 1) {
+            throw new IllegalArgumentException("未使用的兑换码请先作废");
+        }
+        if (codes.deleteById(id) != 1) throw new IllegalArgumentException("删除兑换码记录失败");
+    }
+
     /** Called by flow reporting; only a current, non-expired subscription accrues usage. */
     @Transactional
     public void recordTrafficUsage(long userId, long bytes) {
