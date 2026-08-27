@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardBody } from "@heroui/card";
 import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
+import { Input, Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Chip } from "@heroui/chip";
@@ -25,6 +25,7 @@ import {
   getSpeedLimitList,
   getCustomNodes,
   importCustomNode,
+  importCustomNodes,
   deleteCustomNode,
   disableCustomNode,
   enableCustomNode,
@@ -276,13 +277,18 @@ export default function InboundPage() {
   };
 
   const handleImportCustomNode = async () => {
-    if (!customForm.link.trim()) return toast.error("请输入协议分享链接");
+    const links = customForm.link.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (links.length === 0) return toast.error("请输入协议分享链接");
     if (customForm.visibility === "users" && customForm.userIds.length === 0) return toast.error("按用户订阅时至少选择一个用户");
     setCustomLoading(true);
     try {
-      const imported = await importCustomNode(customForm.name, customForm.link, customForm.visibility, customForm.userIds.map(Number), customForm.ingressNodeId, cleanSni(customForm.sni));
+      const imported = links.length === 1
+        ? await importCustomNode(customForm.name, links[0], customForm.visibility, customForm.userIds.map(Number), customForm.ingressNodeId, cleanSni(customForm.sni))
+        : await importCustomNodes(customForm.name, links, customForm.visibility, customForm.userIds.map(Number), customForm.ingressNodeId, cleanSni(customForm.sni));
       if (imported.code !== 0) return toast.error(imported.msg || "导入失败");
-      toast.success(customForm.ingressNodeId ? "已创建套餐计费线路" : "自定义节点已导入");
+      const failures = Array.isArray(imported.data?.errors) ? imported.data.errors : [];
+      if (failures.length) toast.error(`已导入 ${imported.data?.successCount || 0} 条，${failures.length} 条失败：${failures[0]?.error || "链接格式不正确"}`, { duration: 10000 });
+      else toast.success(customForm.ingressNodeId ? "已创建套餐计费线路" : `已导入 ${links.length} 条自定义节点`);
       setCustomOpen(false); setCustomForm({ name: "", link: "", visibility: "global", userIds: [], ingressNodeId: null, sni: DEFAULT_SNI }); loadAll();
     } catch (e) { toast.error("导入失败"); }
     finally { setCustomLoading(false); }
@@ -535,7 +541,7 @@ export default function InboundPage() {
         <ModalContent>
           <ModalHeader>导入自定义协议节点</ModalHeader>
           <ModalBody className="space-y-3">
-            <Input label="协议分享链接" value={customForm.link} onChange={(e) => setCustomForm({ ...customForm, link: e.target.value })} placeholder="vless://、trojan://、vmess://、hysteria2://、tuic://、anytls://" />
+            <Textarea label="协议分享链接（支持批量）" minRows={5} value={customForm.link} onChange={(e) => setCustomForm({ ...customForm, link: e.target.value })} placeholder="每行一个链接，例如：\nvless://...\ntrojan://...\nss://...\nhysteria2://..." />
             <Input label="显示名称（可空）" value={customForm.name} onChange={(e) => setCustomForm({ ...customForm, name: e.target.value })} />
             <Select
               label="订阅范围"

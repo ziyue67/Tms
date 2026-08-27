@@ -23,12 +23,50 @@ public class CustomNodeController {
         try {
             List<Long> userIds = new ArrayList<>(); Object raw = body.get("userIds");
             if (raw instanceof List<?> list) for (Object id : list) userIds.add(Long.valueOf(String.valueOf(id)));
-            CustomNode custom = service.importNode(String.valueOf(body.getOrDefault("name", "")), String.valueOf(body.get("link")), String.valueOf(body.getOrDefault("visibility", "global")), userIds);
             Object rawIngress = body.get("ingressNodeId");
-            if (rawIngress != null && !String.valueOf(rawIngress).isBlank()) {
-                return createImportedMeteredLine(custom, Long.valueOf(String.valueOf(rawIngress)), body);
+            Long ingressNodeId = rawIngress != null && !String.valueOf(rawIngress).isBlank()
+                    ? Long.valueOf(String.valueOf(rawIngress)) : null;
+
+            List<String> links = new ArrayList<>();
+            Object rawLinks = body.get("links");
+            if (rawLinks instanceof List<?> list) {
+                for (Object value : list) if (value != null && !String.valueOf(value).isBlank()) links.add(String.valueOf(value).trim());
             }
-            return R.ok(custom);
+            if (links.isEmpty() && body.get("link") != null) {
+                for (String line : String.valueOf(body.get("link")).split("\\r?\\n")) {
+                    if (!line.isBlank()) links.add(line.trim());
+                }
+            }
+            if (links.isEmpty()) throw new IllegalArgumentException("请输入协议分享链接");
+
+            String name = String.valueOf(body.getOrDefault("name", ""));
+            if (links.size() == 1) {
+                CustomNode custom = service.importNode(name, links.get(0), String.valueOf(body.getOrDefault("visibility", "global")), userIds);
+                if (ingressNodeId != null) return createImportedMeteredLine(custom, ingressNodeId, body);
+                return R.ok(custom);
+            }
+
+            // Batch imports are intentionally itemized so one malformed link does not hide
+            // the valid links. Metered conversion is supported per link as well.
+            List<Object> imported = new ArrayList<>();
+            List<Map<String, String>> errors = new ArrayList<>();
+            for (String link : links) {
+                try {
+                    CustomNode custom = service.importNode(name, link, String.valueOf(body.getOrDefault("visibility", "global")), userIds);
+                    if (ingressNodeId != null) {
+                        R converted = createImportedMeteredLine(custom, ingressNodeId, body);
+                        if (converted.getCode() != 0) throw new IllegalArgumentException(converted.getMsg());
+                        imported.add(converted.getData());
+                    } else imported.add(custom);
+                } catch (Exception itemError) {
+                    Map<String, String> item = new java.util.LinkedHashMap<>();
+                    item.put("link", link); item.put("error", itemError.getMessage() == null ? "导入失败" : itemError.getMessage());
+                    errors.add(item);
+                }
+            }
+            Map<String, Object> result = new java.util.LinkedHashMap<>();
+            result.put("imported", imported); result.put("successCount", imported.size()); result.put("failureCount", errors.size()); result.put("errors", errors);
+            return R.ok(result);
         } catch (IllegalArgumentException e) { return R.err(e.getMessage()); }
     }
 

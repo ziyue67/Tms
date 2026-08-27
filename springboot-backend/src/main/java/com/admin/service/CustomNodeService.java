@@ -164,6 +164,9 @@ public class CustomNodeService {
                 if (!empty(src.getString("sni")).isEmpty()) proxy.put("servername", src.getString("sni"));
                 addWs(proxy, src, value(src, "net", "network", "tcp")); break;
             }
+            case "shadowsocks": {
+                proxy.put("type", "ss"); proxy.put("cipher", src.getString("method")); proxy.put("password", src.getString("password")); proxy.put("udp", true); break;
+            }
             case "hysteria2": {
                 proxy.put("type", "hysteria2"); proxy.put("password", src.getString("password")); proxy.put("sni", empty(src.getString("sni")));
                 proxy.put("skip-cert-verify", insecure(src));
@@ -202,12 +205,30 @@ public class CustomNodeService {
             } catch (Exception e) { throw new IllegalArgumentException("VMess 分享链接不是有效的 Base64 JSON"); }
         }
         String protocol;
+        if (lower.startsWith("ss://")) {
+            String body = link.substring(link.indexOf("://") + 3);
+            int hash = body.indexOf('#'); String name = hash >= 0 ? decode(body.substring(hash + 1)) : ""; if (hash >= 0) body = body.substring(0, hash);
+            int q = body.indexOf('?'); if (q >= 0) body = body.substring(0, q);
+            String decoded = null; int at = body.lastIndexOf('@');
+            if (at > 0) {
+                try { decoded = new String(Base64.getDecoder().decode(padBase64(decode(body.substring(0, at)))), StandardCharsets.UTF_8); } catch (Exception ignored) { }
+                if (decoded == null || !decoded.contains(":")) throw new IllegalArgumentException("Shadowsocks 分享链接凭证不是有效的 Base64");
+                String[] hp = splitHostPort(body.substring(at + 1));
+                String[] credentials = decoded.split(":", 2);
+                JSONObject out = new JSONObject(); out.put("protocol", "shadowsocks"); out.put("server", hp[0]); out.put("port", Integer.parseInt(hp[1])); out.put("method", credentials[0]); out.put("password", credentials[1]); out.put("name", name); return out;
+            }
+            try { decoded = new String(Base64.getDecoder().decode(padBase64(decode(body))), StandardCharsets.UTF_8); } catch (Exception e) { throw new IllegalArgumentException("Shadowsocks 分享链接不是有效的 Base64"); }
+            int decodedAt = decoded.lastIndexOf('@'); if (decodedAt <= 0) throw new IllegalArgumentException("Shadowsocks 分享链接缺少服务器地址");
+            String[] credentials = decoded.substring(0, decodedAt).split(":", 2); if (credentials.length != 2) throw new IllegalArgumentException("Shadowsocks 分享链接凭证不正确");
+            String[] hp = splitHostPort(decoded.substring(decodedAt + 1));
+            JSONObject out = new JSONObject(); out.put("protocol", "shadowsocks"); out.put("server", hp[0]); out.put("port", Integer.parseInt(hp[1])); out.put("method", credentials[0]); out.put("password", credentials[1]); out.put("name", name); return out;
+        }
         if (lower.startsWith("vless://")) protocol = "vless";
         else if (lower.startsWith("trojan://")) protocol = "trojan";
         else if (lower.startsWith("hysteria2://") || lower.startsWith("hy2://")) protocol = "hysteria2";
         else if (lower.startsWith("tuic://")) protocol = "tuic";
         else if (lower.startsWith("anytls://")) protocol = "anytls";
-        else throw new IllegalArgumentException("支持的协议: VLESS-Reality、Trojan-Reality、VMess、Hysteria2、TUIC、AnyTLS");
+        else throw new IllegalArgumentException("支持的协议: VLESS-Reality、Trojan-Reality、VMess、Shadowsocks、Hysteria2、TUIC、AnyTLS");
         String body = link.substring(link.indexOf("://") + 3);
         int hash = body.indexOf('#'); String name = hash >= 0 ? decode(body.substring(hash + 1)) : ""; if (hash >= 0) body = body.substring(0, hash);
         int q = body.indexOf('?'); String query = q >= 0 ? body.substring(q + 1) : ""; if (q >= 0) body = body.substring(0, q);
@@ -228,7 +249,7 @@ public class CustomNodeService {
     private boolean insecure(JSONObject o) { String v = o.getString("insecure"); return "1".equals(v) || "true".equalsIgnoreCase(v) || "yes".equalsIgnoreCase(v) || "1".equals(o.getString("allow_insecure")); }
     private Map<String, Object> realityOpts(JSONObject src) { Map<String, Object> r = new LinkedHashMap<>(); r.put("public-key", empty(src.getString("pbk"))); r.put("short-id", empty(src.getString("sid"))); return r; }
     private void addWs(Map<String, Object> proxy, JSONObject src, String network) { if ("ws".equalsIgnoreCase(network)) { Map<String, Object> ws = new LinkedHashMap<>(); ws.put("path", empty(src.getString("path"))); String host = src.getString("host"); if (!empty(host).isEmpty()) ws.put("headers", Collections.singletonMap("Host", host)); proxy.put("ws-opts", ws); } }
-    private String canonicalLink(String value) { if (value == null) throw new IllegalArgumentException("分享链接不能为空"); return value.trim().replace("&amp;", "&"); }
+    private String canonicalLink(String value) { if (value == null) throw new IllegalArgumentException("分享链接不能为空"); return value.trim().replace("&amp;", "&").replace("\\://", "://").replace("\\@", "@").replace("\\_", "_"); }
     private String decode(String value) { try { return URLDecoder.decode(value, StandardCharsets.UTF_8.name()); } catch (Exception ignored) { return value; } }
     private String empty(String value) { return value == null ? "" : value; }
     private String uniqueName(String name, Set<String> used) { String base = name == null || name.isBlank() ? "自定义节点" : name.trim(); String candidate = base; int i = 2; while (!used.add(candidate)) candidate = base + " " + i++; return candidate; }
