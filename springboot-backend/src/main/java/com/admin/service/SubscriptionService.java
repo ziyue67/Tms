@@ -70,6 +70,17 @@ public class SubscriptionService {
         return quotaLimitError(userId) == null;
     }
 
+    /**
+     * Strict access check for subscription-only features such as imported nodes.
+     * The legacy isSubscriptionUsable method treats users without a commerce
+     * record as usable for backwards-compatible native subscriptions; imported
+     * global nodes must require an actual active subscription.
+     */
+    public boolean hasUsableSubscription(long userId) {
+        UserSubscription item = current(userId);
+        return item != null && isSubscriptionUsable(userId);
+    }
+
     private UserSubscription enrich(UserSubscription item) {
         if (item == null || item.getPlanId() == null) return item;
         SubscriptionPlan plan = plans.selectById(item.getPlanId());

@@ -879,9 +879,11 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         }
         // Imported nodes are client-side links. They are deliberately added only to
         // the aggregate subscription: they have no local machine/line identity.
-        for (CustomNode custom : customNodeService.activeForUser(u.getId())) {
-            if (custom.getRawLink() != null && !custom.getRawLink().isEmpty()) {
-                links.add(custom.getRawLink());
+        if (subscriptionService.hasUsableSubscription(u.getId())) {
+            for (CustomNode custom : customNodeService.activeForUser(u.getId())) {
+                if (custom.getRawLink() != null && !custom.getRawLink().isEmpty()) {
+                    links.add(custom.getRawLink());
+                }
             }
         }
         String joined = String.join("\n", links);
@@ -991,7 +993,7 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
             }
         }
         Long customOwnerId = subscriptionUserId;
-        if (customOwnerId != null) {
+        if (customOwnerId != null && subscriptionService.hasUsableSubscription(customOwnerId)) {
             for (CustomNode custom : customNodeService.activeForUser(customOwnerId)) {
                 java.util.Map<String, Object> proxy = customNodeService.clashProxy(custom, usedNames);
                 if (proxy != null) proxies.add(proxy);
@@ -1258,7 +1260,8 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         // 前端做了两种格式的兼容,老前端配新后端也不会白屏。
         JSONObject result = new JSONObject();
         result.put("lines", lines);
-        int customNodeCount = customNodeService.activeCount(userId);
+        int customNodeCount = subscriptionService.hasUsableSubscription(userId)
+                ? customNodeService.activeCount(userId) : 0;
         result.put("customNodeCount", customNodeCount);
         if (!lines.isEmpty() || customNodeCount > 0) {
             User u = userMapper.selectById(userId);

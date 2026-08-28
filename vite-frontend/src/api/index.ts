@@ -44,9 +44,9 @@ export const getAdminPaymentOrders = () => Network.get("/admin/subscription/orde
 export const retryAdminPaymentOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/retry`);
 export const completeAdminTestOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/complete-test`);
 export const getCustomNodes = () => Network.get("/custom-nodes");
-export const importCustomNode = (name: string, link: string, visibility: "global" | "users" = "global", userIds: number[] = [], ingressNodeId?: number | null, sni?: string) =>
+export const importCustomNode = (name: string, link: string, visibility: "global" | "subscribers" | "users" = "subscribers", userIds: number[] = [], ingressNodeId?: number | null, sni?: string) =>
   Network.post("/custom-nodes", { name, link, visibility, userIds, ingressNodeId, sni });
-export const importCustomNodes = (name: string, links: string[], visibility: "global" | "users" = "global", userIds: number[] = [], ingressNodeId?: number | null, sni?: string) =>
+export const importCustomNodes = (name: string, links: string[], visibility: "global" | "subscribers" | "users" = "subscribers", userIds: number[] = [], ingressNodeId?: number | null, sni?: string) =>
   Network.post("/custom-nodes", { name, links, visibility, userIds, ingressNodeId, sni });
 // Custom-node IDs are 64-bit Snowflake values, so the browser must never coerce them
 // to JavaScript numbers. Keep them as strings in URLs and component state.

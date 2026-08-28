@@ -12,7 +12,7 @@ public class CustomNode {
     private String protocol;
     private String rawLink;
     private String parsedJson;
-    /** global = visible to every user's aggregate subscription; users = assignment scoped. */
+    /** global/subscribers = aggregate scope; users = explicit assignment scope. */
     private String visibility;
     private Integer status;
     private Long createdTime;

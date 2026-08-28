@@ -49,7 +49,7 @@ export default function InboundPage() {
   const [selectedCustomNodeIds, setSelectedCustomNodeIds] = useState<Set<string>>(new Set());
   const [customBulkLoading, setCustomBulkLoading] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
-  const [customForm, setCustomForm] = useState<{ name: string; link: string; visibility: "global" | "users"; userIds: string[]; ingressNodeId: number | null; sni: string }>({ name: "", link: "", visibility: "global", userIds: [], ingressNodeId: null, sni: DEFAULT_SNI });
+  const [customForm, setCustomForm] = useState<{ name: string; link: string; visibility: "global" | "subscribers" | "users"; userIds: string[]; ingressNodeId: number | null; sni: string }>({ name: "", link: "", visibility: "subscribers", userIds: [], ingressNodeId: null, sni: DEFAULT_SNI });
   const [customLoading, setCustomLoading] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -291,7 +291,7 @@ export default function InboundPage() {
       const failures = Array.isArray(imported.data?.errors) ? imported.data.errors : [];
       if (failures.length) toast.error(`已导入 ${imported.data?.successCount || 0} 条，${failures.length} 条失败：${failures[0]?.error || "链接格式不正确"}`, { duration: 10000 });
       else toast.success(customForm.ingressNodeId ? "已创建套餐计费线路" : `已导入 ${links.length} 条自定义节点`);
-      setCustomOpen(false); setCustomForm({ name: "", link: "", visibility: "global", userIds: [], ingressNodeId: null, sni: DEFAULT_SNI }); loadAll();
+      setCustomOpen(false); setCustomForm({ name: "", link: "", visibility: "subscribers", userIds: [], ingressNodeId: null, sni: DEFAULT_SNI }); loadAll();
     } catch (e) { toast.error("导入失败"); }
     finally { setCustomLoading(false); }
   };
@@ -548,7 +548,7 @@ export default function InboundPage() {
               <Chip size="sm" color={node.status === 1 ? "success" : "default"}>{({ vless: "VLESS-Reality", trojan: "Trojan-Reality", vmess: "VMess", shadowsocks: "Shadowsocks", hysteria2: "Hysteria2", tuic: "TUIC", anytls: "AnyTLS" } as any)[node.protocol] || node.protocol}</Chip>
               <span className="font-medium">{node.name}</span>
               <Chip size="sm" variant="flat" color={node.status === 1 ? "success" : "default"}>{node.status === 1 ? "已启用" : "已停用"}</Chip>
-              <Chip size="sm" variant="flat" color="primary">{node.visibility === "users" ? `按用户 (${(node.userIds || []).length})` : "全局聚合"}</Chip>
+              <Chip size="sm" variant="flat" color="primary">{node.visibility === "users" ? `按用户 (${(node.userIds || []).length})` : node.visibility === "subscribers" ? "全局聚合（套餐用户）" : "全局聚合（所有用户）"}</Chip>
               {node.visibility === "users" && (node.userIds || []).map((id: number) => {
                 const user = users.find((u) => Number(u.id) === Number(id));
                 return <Chip key={id} size="sm" variant="flat">{user?.user || `用户 #${id}`}</Chip>;
@@ -613,9 +613,10 @@ export default function InboundPage() {
               label="订阅范围"
               isDisabled={Boolean(customForm.ingressNodeId)}
               selectedKeys={[customForm.visibility]}
-              onSelectionChange={(keys) => setCustomForm({ ...customForm, visibility: String(Array.from(keys)[0] || "global") as "global" | "users", userIds: String(Array.from(keys)[0] || "global") === "users" ? customForm.userIds : [] })}
+              onSelectionChange={(keys) => setCustomForm({ ...customForm, visibility: String(Array.from(keys)[0] || "subscribers") as "global" | "subscribers" | "users", userIds: String(Array.from(keys)[0] || "subscribers") === "users" ? customForm.userIds : [] })}
             >
               <SelectItem key="global">全局聚合（所有用户）</SelectItem>
+              <SelectItem key="subscribers">全局聚合（套餐用户）</SelectItem>
               <SelectItem key="users">按用户订阅</SelectItem>
             </Select>
             {customForm.visibility === "users" && <Select

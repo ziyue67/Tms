@@ -32,6 +32,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith(MockitoExtension.class)
@@ -83,6 +84,25 @@ class SubscriptionServiceTest {
     @Test
     void resetDayZeroDisablesPeriodicReset() {
         assertEquals(0L, SubscriptionService.calculateNextReset(utc("2026-05-31T01:00:00Z"), 0, ZoneOffset.UTC));
+    }
+
+    @Test
+    void strictSubscriptionAccessRejectsUsersWithoutAPlan() {
+        when(subscriptions.selectOne(any(QueryWrapper.class))).thenReturn(null);
+
+        assertFalse(service.hasUsableSubscription(42L));
+    }
+
+    @Test
+    void strictSubscriptionAccessAcceptsActivePlan() {
+        UserSubscription active = new UserSubscription();
+        active.setId(7L);
+        active.setUserId(42L);
+        active.setStatus(1);
+        active.setExpiresAt(0L);
+        when(subscriptions.selectOne(any(QueryWrapper.class))).thenReturn(active);
+
+        assertTrue(service.hasUsableSubscription(42L));
     }
 
     @Test
