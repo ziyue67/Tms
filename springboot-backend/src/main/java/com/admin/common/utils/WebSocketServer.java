@@ -80,6 +80,30 @@ public class WebSocketServer extends TextWebSocketHandler {
     public static Boolean getSingboxRunning(Long nodeId) {
         return nodeId == null ? null : singboxRunning.get(nodeId);
     }
+
+    /**
+     * Revoke a node's live WebSocket session after the node is deleted.
+     *
+     * The remote agent may still be running (or may have an old IP), so
+     * deleting the database row alone is not enough: an already-established
+     * session would otherwise remain in nodeSessions and could still receive
+     * panel commands until it naturally reconnects.
+     */
+    public static void disconnectNode(Long nodeId) {
+        if (nodeId == null) return;
+
+        WebSocketSession session = nodeSessions.remove(nodeId);
+        if (session == null) return;
+
+        sessionLocks.remove(session.getId());
+        try {
+            if (session.isOpen()) {
+                session.close(CloseStatus.POLICY_VIOLATION);
+            }
+        } catch (Exception e) {
+            log.debug("断开已删除节点 {} 的连接失败: {}", nodeId, e.getMessage());
+        }
+    }
     
     // 为每个session提供锁对象，防止并发发送消息
     private static final ConcurrentHashMap<String, Object> sessionLocks = new ConcurrentHashMap<>();

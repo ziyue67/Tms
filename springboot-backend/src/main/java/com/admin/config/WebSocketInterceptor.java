@@ -42,10 +42,11 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
         String tls = serverHttpRequest.getServletRequest().getParameter("tls");
         String socks = serverHttpRequest.getServletRequest().getParameter("socks");
         if (Objects.equals(type, "1")) {
-            System.out.println("type: " + type + " - version: " + version + " - secret: " + secret + " - IP: " + getClientIp(request));
             Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
             if (node == null) {
-                log.info("节点验证失败：未找到匹配的secret");
+                // 删除节点或节点重装后，旧客户端可能持续重连。拒绝连接并降为 debug，
+                // 避免一个失联节点每几秒刷满生产日志。
+                log.debug("节点验证失败：未找到匹配的 secret，IP: {}", getClientIp(request));
                 return false;
             }
             attributes.put("id", node.getId());

@@ -253,6 +253,11 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
         // 3. 执行删除操作
         boolean result = this.removeById(id);
+        if (result) {
+            // 删除数据库记录后立即撤销现有 WebSocket 会话。
+            // 远程节点可能已经换 IP 或无法登录，不能依赖远端卸载来阻断旧连接。
+            WebSocketServer.disconnectNode(id);
+        }
         return result ? R.ok(SUCCESS_DELETE_MSG) : R.err(ERROR_DELETE_MSG);
     }
 
