@@ -22,6 +22,7 @@ import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.InboundMapper;
 import com.admin.mapper.InboundAutoProvisionMapper;
 import com.admin.mapper.InboundUserMapper;
+import com.admin.mapper.UserTunnelMapper;
 import com.admin.mapper.NodeMapper;
 import com.admin.mapper.TunnelMapper;
 import com.admin.mapper.UserMapper;
@@ -79,6 +80,8 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
     private com.admin.mapper.InboundLineMapper inboundLineMapper;
     @Autowired
     private InboundAutoProvisionMapper inboundAutoProvisionMapper;
+    @Autowired
+    private UserTunnelMapper userTunnelMapper;
     @Autowired
     private com.admin.service.LandingService landingService;
     @Autowired
@@ -295,7 +298,34 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         // A cleared protocol group cannot serve future subscription users.
         // Remove its automatic-assignment setting as well, so it cannot become a stale target.
         deleteAutoProvisionTargets(nodeId, relay, landingId);
+        deleteInboundLines(nodeId, relay, landingId);
+        cleanupProtocolTunnel(nodeId);
         return R.ok();
+    }
+
+    /** 删除协议组后回收该组的线路配额；否则用户订阅会继续显示已不存在的节点。 */
+    private void deleteInboundLines(Long nodeId, Boolean relay, Long landingId) {
+        QueryWrapper<InboundLine> query = new QueryWrapper<InboundLine>().eq("node_id", nodeId);
+        if (Boolean.TRUE.equals(relay)) {
+            if (landingId == null) query.isNotNull("landing_id");
+            else query.eq("landing_id", landingId);
+        } else {
+            query.isNull("landing_id");
+        }
+        inboundLineMapper.delete(query);
+    }
+
+    /** 自动协议隧道没有转发和用户权限时可安全回收，手工隧道不会被碰。 */
+    private void cleanupProtocolTunnel(Long nodeId) {
+        if (this.count(new QueryWrapper<Inbound>().eq("node_id", nodeId)) > 0) return;
+        List<Tunnel> tunnels = tunnelMapper.selectList(new QueryWrapper<Tunnel>()
+                .eq("in_node_id", nodeId).eq("out_node_id", nodeId).eq("type", TUNNEL_TYPE_PORT_FORWARD)
+                .like("name", "inbound-tunnel-node"));
+        for (Tunnel tunnel : tunnels) {
+            long forwards = forwardMapper.selectCount(new QueryWrapper<Forward>().eq("tunnel_id", tunnel.getId()));
+            long permissions = userTunnelMapper.selectCount(new QueryWrapper<com.admin.entity.UserTunnel>().eq("tunnel_id", tunnel.getId()));
+            if (forwards == 0 && permissions == 0) tunnelMapper.deleteById(tunnel.getId());
+        }
     }
 
     /** SS-2022 密钥:32 字节随机 → 标准 base64(带 padding),sing-box 的 password 要这个格式 */

@@ -10,8 +10,14 @@ import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.Node;
 import com.admin.entity.Tunnel;
 import com.admin.entity.ViteConfig;
+import com.admin.entity.Forward;
+import com.admin.mapper.ForwardMapper;
+import com.admin.mapper.InboundAutoProvisionMapper;
+import com.admin.mapper.InboundLineMapper;
+import com.admin.mapper.InboundMapper;
 import com.admin.mapper.NodeMapper;
 import com.admin.mapper.TunnelMapper;
+import com.admin.mapper.UserTunnelMapper;
 import com.admin.service.NodeService;
 import com.admin.service.TunnelService;
 import com.admin.service.ViteConfigService;
@@ -22,6 +28,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.util.List;
@@ -56,6 +63,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     private static final String ERROR_UPDATE_MSG = "节点更新失败";
     private static final String ERROR_DELETE_MSG = "节点删除失败";
     private static final String ERROR_NODE_NOT_FOUND = "节点不存在";
+    private static final String ERROR_INBOUND_IN_USE = "该节点还有 %d 个协议，请先删除相关协议";
     
     /** 隧道使用检查相关消息 */
     private static final String ERROR_IN_NODE_IN_USE = "该节点还有 %d 个隧道作为入口节点在使用，请先删除相关隧道";
@@ -71,6 +79,21 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     
     @Resource
     private TunnelMapper tunnelMapper;
+
+    @Resource
+    private ForwardMapper forwardMapper;
+
+    @Resource
+    private UserTunnelMapper userTunnelMapper;
+
+    @Resource
+    private InboundMapper inboundMapper;
+
+    @Resource
+    private InboundLineMapper inboundLineMapper;
+
+    @Resource
+    private InboundAutoProvisionMapper inboundAutoProvisionMapper;
 
     @Resource
     @Lazy
@@ -203,6 +226,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
      * @return 删除结果响应
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public R deleteNode(Long id) {
         // 1. 验证节点是否存在
         Node node = this.getById(id);
@@ -210,11 +234,22 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             return R.err(ERROR_NODE_NOT_FOUND);
         }
 
-        // 2. 检查节点使用情况
+        // 协议入站没有外键约束，必须显式阻止删除以免留下不可见的协议记录。
+        long inboundCount = inboundMapper.selectCount(new QueryWrapper<com.admin.entity.Inbound>().eq("node_id", id));
+        if (inboundCount > 0) {
+            return R.err(String.format(ERROR_INBOUND_IN_USE, inboundCount));
+        }
+
+        // 2. 检查节点使用情况。无依赖的自动协议隧道属于可回收残留，不应阻止节点删除。
         R usageCheckResult = checkNodeUsage(id);
         if (usageCheckResult.getCode() != 0) {
             return usageCheckResult;
         }
+
+        // 清理协议清空后遗留的线路、自动分配目标和自动隧道。
+        inboundLineMapper.delete(new QueryWrapper<com.admin.entity.InboundLine>().eq("node_id", id));
+        inboundAutoProvisionMapper.delete(new QueryWrapper<com.admin.entity.InboundAutoProvision>().eq("node_id", id));
+        deleteOrphanProtocolTunnels(id);
 
         // 3. 执行删除操作
         boolean result = this.removeById(id);
@@ -324,10 +359,8 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
      * @return 检查结果响应
      */
     private R checkInNodeUsage(Long nodeId) {
-        QueryWrapper<Tunnel> query = new QueryWrapper<>();
-        query.eq("in_node_id", nodeId);
-        
-        long tunnelCount = tunnelMapper.selectCount(query);
+        long tunnelCount = tunnelMapper.selectList(new QueryWrapper<Tunnel>().eq("in_node_id", nodeId)).stream()
+                .filter(tunnel -> !isOrphanProtocolTunnel(tunnel)).count();
         if (tunnelCount > 0) {
             String errorMsg = String.format(ERROR_IN_NODE_IN_USE, tunnelCount);
             return R.err(errorMsg);
@@ -343,16 +376,28 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
      * @return 检查结果响应
      */
     private R checkOutNodeUsage(Long nodeId) {
-        QueryWrapper<Tunnel> query = new QueryWrapper<>();
-        query.eq("out_node_id", nodeId);
-        
-        long tunnelCount = tunnelMapper.selectCount(query);
+        long tunnelCount = tunnelMapper.selectList(new QueryWrapper<Tunnel>().eq("out_node_id", nodeId)).stream()
+                .filter(tunnel -> !isOrphanProtocolTunnel(tunnel)).count();
         if (tunnelCount > 0) {
             String errorMsg = String.format(ERROR_OUT_NODE_IN_USE, tunnelCount);
             return R.err(errorMsg);
         }
         
         return R.ok();
+    }
+
+    private boolean isOrphanProtocolTunnel(Tunnel tunnel) {
+        if (tunnel == null || tunnel.getName() == null || !tunnel.getName().startsWith("inbound-tunnel-node")) return false;
+        long forwards = forwardMapper.selectCount(new QueryWrapper<Forward>().eq("tunnel_id", tunnel.getId()));
+        long permissions = userTunnelMapper.selectCount(new QueryWrapper<com.admin.entity.UserTunnel>().eq("tunnel_id", tunnel.getId()));
+        return forwards == 0 && permissions == 0;
+    }
+
+    private void deleteOrphanProtocolTunnels(Long nodeId) {
+        List<Tunnel> tunnels = tunnelMapper.selectList(new QueryWrapper<Tunnel>()
+                .eq("in_node_id", nodeId).eq("out_node_id", nodeId).eq("type", 1)
+                .like("name", "inbound-tunnel-node"));
+        for (Tunnel tunnel : tunnels) if (isOrphanProtocolTunnel(tunnel)) tunnelMapper.deleteById(tunnel.getId());
     }
 
     /**
