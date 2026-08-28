@@ -39,7 +39,14 @@ public class CustomNodeService {
         String name = requestedName == null || requestedName.trim().isEmpty() ? parsed.getString("name") : requestedName.trim();
         if (name == null || name.isEmpty()) name = "自定义 " + protocol.toUpperCase(Locale.ROOT) + " 节点";
         CustomNode node = new CustomNode();
-        String visibility = "users".equalsIgnoreCase(requestedVisibility) ? "users" : "global";
+        String visibility;
+        if ("users".equalsIgnoreCase(requestedVisibility)) {
+            visibility = "users";
+        } else if ("subscribers".equalsIgnoreCase(requestedVisibility)) {
+            visibility = "subscribers";
+        } else {
+            visibility = "global";
+        }
         if ("users".equals(visibility) && (userIds == null || userIds.isEmpty())) throw new IllegalArgumentException("按用户订阅时至少选择一个用户");
         node.setName(name); node.setProtocol(protocol); node.setRawLink(canonicalLink(link)); node.setParsedJson(parsed.toJSONString()); node.setVisibility(visibility);
         node.setStatus(1); node.setCreatedTime(System.currentTimeMillis()); node.setUpdatedTime(System.currentTimeMillis());
@@ -119,7 +126,8 @@ public class CustomNodeService {
     public List<CustomNode> activeForUser(Long userId) {
         // Imported links are external client-side subscription sources. Scope only
         // controls who receives the link; no local inbound/tunnel/GOST is created.
-        QueryWrapper<CustomNode> global = new QueryWrapper<CustomNode>().eq("status", 1).and(w -> w.isNull("visibility").or().eq("visibility", "global"));
+        QueryWrapper<CustomNode> global = new QueryWrapper<CustomNode>().eq("status", 1)
+                .and(w -> w.isNull("visibility").or().eq("visibility", "global").or().eq("visibility", "subscribers"));
         List<CustomNode> result = new ArrayList<>(nodes.selectList(global));
         List<UserCustomNode> rows = assignments.selectList(new QueryWrapper<UserCustomNode>().eq("user_id", userId).eq("status", 1));
         if (!rows.isEmpty()) { List<Long> ids = new ArrayList<>(); for (UserCustomNode row : rows) ids.add(row.getCustomNodeId()); result.addAll(nodes.selectList(new QueryWrapper<CustomNode>().in("id", ids).eq("status", 1).eq("visibility", "users"))); }
