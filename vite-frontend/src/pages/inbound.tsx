@@ -107,7 +107,10 @@ export default function InboundPage() {
         getAutoProvisionTargets(),
       ]);
       if (ib.code === 0) setInbounds(ib.data || []);
-      if (nd.code === 0) setNodes(nd.data || []);
+      if (nd.code === 0) {
+        // 兼容部分反向代理将 status 返回为字符串，否则在线机器会被显示成红色/离线
+        setNodes((nd.data || []).map((n: any) => ({ ...n, status: Number(n.status) })));
+      }
       if (us.code === 0) {
         const d: any = us.data;
         setUsers(Array.isArray(d) ? d : (d && d.records ? d.records : []));

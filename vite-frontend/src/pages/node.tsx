@@ -143,7 +143,9 @@ export default function NodePage() {
       if (res.code === 0) {
         setNodeList(res.data.map((node: any) => ({
           ...node,
-          connectionStatus: node.status === 1 ? 'online' : 'offline',
+          // 后端/代理层偶尔会把数字状态序列化成字符串，统一转数字避免在线节点被误标红
+          status: Number(node.status),
+          connectionStatus: Number(node.status) === 1 ? 'online' : 'offline',
           systemInfo: node.systemInfo ? normalizeSystemInfo(node.systemInfo) : null,
           copyLoading: false
         })));
@@ -211,7 +213,7 @@ export default function NodePage() {
         if (node.id == id) {
           return {
             ...node,
-            connectionStatus: messageData === 1 ? 'online' : 'offline',
+            connectionStatus: Number(messageData) === 1 ? 'online' : 'offline',
             systemInfo: messageData === 0 ? null : node.systemInfo
           };
         }
