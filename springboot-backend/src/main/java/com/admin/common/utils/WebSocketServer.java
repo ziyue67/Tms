@@ -21,6 +21,9 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 import java.util.Map;
@@ -110,6 +113,14 @@ public class WebSocketServer extends TextWebSocketHandler {
     
     // 存储等待响应的请求，key为requestId，value为CompletableFuture
     private static final ConcurrentHashMap<String, CompletableFuture<GostDto>> pendingRequests = new ConcurrentHashMap<>();
+
+    /** Avoid a red/green flicker when a node reconnects during a brief network hiccup. */
+    private static final ScheduledExecutorService disconnectScheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "tms-node-disconnect-check");
+                thread.setDaemon(true);
+                return thread;
+            });
     
     // 缓存加密器实例，避免重复创建
     private static final ConcurrentHashMap<String, AESCrypto> cryptoCache = new ConcurrentHashMap<>();
@@ -473,30 +484,10 @@ public class WebSocketServer extends TextWebSocketHandler {
                     return;
                 }
                 
-                log.info("节点 {} 当前活跃连接关闭，开始验证并更新状态", nodeId);
-                
-                    nodeSessions.remove(nodeId);
-                    
-                    // 更新节点状态为离线
-                    Node node = nodeService.getById(nodeId);
-                    if (node != null) {
-                        node.setStatus(0);
-                        boolean updateResult = nodeService.updateById(node);
-                        
-                        if (updateResult) {
-                            log.info("节点 {} 状态更新为离线成功", nodeId);
-                            
-                            JSONObject res = new JSONObject();
-                            res.put("id", id);
-                            res.put("type", "status");
-                            res.put("data", 0);
-                            broadcastMessage(res.toJSONString());
-                        } else {
-                            log.info("节点 {} 状态更新为离线失败", nodeId);
-                        }
-                    } else {
-                        log.info("节点 {} 不存在，无法更新离线状态", nodeId);
-                    }
+                log.info("节点 {} 当前活跃连接关闭，延迟确认离线状态", nodeId);
+                // 节点网络抖动时通常会在 1~2 秒内重连。延迟确认避免面板先
+                // 广播离线再立即广播在线，造成管理员看到节点频繁爆红。
+                disconnectScheduler.schedule(() -> markNodeOfflineIfDisconnected(nodeId, session), 5, TimeUnit.SECONDS);
             }
             
             // 清理session锁对象
@@ -505,6 +496,22 @@ public class WebSocketServer extends TextWebSocketHandler {
         } catch (Exception e) {
             log.info("关闭连接时发生异常: {}", e.getMessage(), e);
         }
+    }
+
+    private void markNodeOfflineIfDisconnected(Long nodeId, WebSocketSession closedSession) {
+        WebSocketSession current = nodeSessions.get(nodeId);
+        if (current != null && current.isOpen() && !current.equals(closedSession)) return;
+        nodeSessions.remove(nodeId, closedSession);
+        Node node = nodeService.getById(nodeId);
+        if (node == null || node.getStatus() == null || node.getStatus() == 0) return;
+        node.setStatus(0);
+        if (!nodeService.updateById(node)) return;
+        JSONObject res = new JSONObject();
+        res.put("id", String.valueOf(nodeId));
+        res.put("type", "status");
+        res.put("data", 0);
+        broadcastMessage(res.toJSONString());
+        log.info("节点 {} 状态更新为离线成功", nodeId);
     }
 
     // 点对点发送消息

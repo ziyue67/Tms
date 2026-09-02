@@ -879,7 +879,7 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
         }
         // Imported nodes are client-side links. They are deliberately added only to
         // the aggregate subscription: they have no local machine/line identity.
-        if (subscriptionService.hasUsableSubscription(u.getId())) {
+        if (canAccessCustomNodes(u)) {
             for (CustomNode custom : customNodeService.activeForUser(u.getId())) {
                 if (custom.getRawLink() != null && !custom.getRawLink().isEmpty()) {
                     links.add(custom.getRawLink());
@@ -993,7 +993,7 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
             }
         }
         Long customOwnerId = subscriptionUserId;
-        if (customOwnerId != null && subscriptionService.hasUsableSubscription(customOwnerId)) {
+        if (customOwnerId != null && canAccessCustomNodes(userMapper.selectById(customOwnerId))) {
             for (CustomNode custom : customNodeService.activeForUser(customOwnerId)) {
                 java.util.Map<String, Object> proxy = customNodeService.clashProxy(custom, usedNames);
                 if (proxy != null) proxies.add(proxy);
@@ -1005,6 +1005,18 @@ public class InboundServiceImpl extends ServiceImpl<InboundMapper, Inbound> impl
             return emptyClashSubscription();
         }
         return ClashUtil.buildConfig(proxies);
+    }
+
+    /**
+     * Administrators manage imported subscription sources and must be able to
+     * verify them from their own aggregate link even without a commerce plan.
+     * Regular users still require an active, usable package before custom nodes
+     * are exposed.
+     */
+    private boolean canAccessCustomNodes(User user) {
+        if (user == null) return false;
+        if (user.getRoleId() != null && user.getRoleId() == 0) return true;
+        return subscriptionService.hasUsableSubscription(user.getId());
     }
 
     /** 取(必要时生成)该车友的「全部线路」聚合订阅 token */
