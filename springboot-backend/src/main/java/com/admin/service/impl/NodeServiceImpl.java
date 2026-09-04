@@ -446,9 +446,28 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         // 第二部分：执行安装脚本（去掉-u参数）
         command.append("./install.sh")
                .append(" -a ").append(processedServerAddr)  // 服务器地址
-               .append(" -s ").append(node.getSecret());    // 节点密钥
+               .append(" -s ").append(node.getSecret())     // 节点密钥
+               .append(" -p ").append(publicForwardPortRange(node));
         
         return R.ok(command.toString());
+    }
+
+    /**
+     * GOST 对外转发端口和 sing-box 内部 41000+ 端口必须区分：
+     * 安装脚本会按这个范围自动配置 UFW。规则与 InboundServiceImpl
+     * 的 hybridPortRange 保持一致。
+     */
+    private String publicForwardPortRange(Node node) {
+        int start = node.getPortSta() == null ? 20000 : node.getPortSta();
+        int end = node.getPortEnd() == null ? 39999 : node.getPortEnd();
+        if (start <= 39999 && end >= 20000) {
+            start = Math.max(start, 20000);
+            end = Math.min(end, 39999);
+        }
+        if (start < 1 || end > 65535 || start > end) {
+            return "20000:39999";
+        }
+        return start + ":" + end;
     }
 
     /**
