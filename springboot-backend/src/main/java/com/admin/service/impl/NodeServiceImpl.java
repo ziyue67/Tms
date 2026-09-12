@@ -240,6 +240,11 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             return R.err(String.format(ERROR_INBOUND_IN_USE, inboundCount));
         }
 
+        // 协议组被清空后可能留下指向已删除入站的自动转发。
+        // 它们既不能出网也不属于用户手工中转，却会让自动隧道看起来"仍在使用"，
+        // 于是节点删除会被永久卡住。先把这些失效转发回收掉。
+        pruneDanglingProtocolForwards(id);
+
         // 2. 检查节点使用情况。无依赖的自动协议隧道属于可回收残留，不应阻止节点删除。
         R usageCheckResult = checkNodeUsage(id);
         if (usageCheckResult.getCode() != 0) {
@@ -393,9 +398,47 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     private boolean isOrphanProtocolTunnel(Tunnel tunnel) {
         if (tunnel == null || tunnel.getName() == null || !tunnel.getName().startsWith("inbound-tunnel-node")) return false;
-        long forwards = forwardMapper.selectCount(new QueryWrapper<Forward>().eq("tunnel_id", tunnel.getId()));
+        // 只统计仍然有效的协议转发：指向已删除入站的转发算残留，不该阻止节点删除。
+        long forwards = forwardMapper.selectList(new QueryWrapper<Forward>().eq("tunnel_id", tunnel.getId()))
+                .stream().filter(this::isLiveProtocolForward).count();
         long permissions = userTunnelMapper.selectCount(new QueryWrapper<com.admin.entity.UserTunnel>().eq("tunnel_id", tunnel.getId()));
         return forwards == 0 && permissions == 0;
+    }
+
+    /** 协议转发命名固定 inbound-{入站id}-user-{用户id}，用于从名字还原它服务的入站。 */
+    private static final java.util.regex.Pattern PROTOCOL_FORWARD_NAME =
+            java.util.regex.Pattern.compile("^inbound-(\\d+)-user-\\d+$");
+
+    /**
+     * 协议转发是否仍然有效：它指向的入站必须还存在。
+     * 无法判定归属(用户手工转发、名字被改过)时一律按有效处理，绝不误删用户数据。
+     */
+    private boolean isLiveProtocolForward(Forward forward) {
+        if (forward == null || forward.getName() == null) return true;
+        java.util.regex.Matcher matcher = PROTOCOL_FORWARD_NAME.matcher(forward.getName());
+        if (!matcher.matches()) return true;
+        Long inboundId;
+        try {
+            inboundId = Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException e) {
+            return true;
+        }
+        return inboundMapper.selectById(inboundId) != null;
+    }
+
+    /** 回收协议组消失后遗留的自动转发；只在转发确实指向不存在的入站时删除。 */
+    private void pruneDanglingProtocolForwards(Long nodeId) {
+        List<Tunnel> tunnels = tunnelMapper.selectList(new QueryWrapper<Tunnel>()
+                .eq("in_node_id", nodeId).eq("out_node_id", nodeId).eq("type", 1)
+                .like("name", "inbound-tunnel-node"));
+        for (Tunnel tunnel : tunnels) {
+            List<Forward> forwards = forwardMapper.selectList(new QueryWrapper<Forward>().eq("tunnel_id", tunnel.getId()));
+            for (Forward forward : forwards) {
+                if (!isLiveProtocolForward(forward)) {
+                    forwardMapper.deleteById(forward.getId());
+                }
+            }
+        }
     }
 
     private void deleteOrphanProtocolTunnels(Long nodeId) {
