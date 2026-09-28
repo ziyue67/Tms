@@ -47,6 +47,10 @@ type DataStore interface {
 	DeleteUserCascade(context.Context, int64) error
 	UserPackage(context.Context, int64) (store.UserPackage, error)
 	RecordTrafficUsage(context.Context, int64, int64, int64, int64, int64) error
+	QueryMaps(context.Context, string, ...any) ([]map[string]any, error)
+	InsertMap(context.Context, string, map[string]any) (int64, error)
+	UpdateMap(context.Context, string, int64, map[string]any) error
+	DeleteByID(context.Context, string, int64) error
 	SubscriptionPlans(context.Context, bool) ([]store.SubscriptionPlan, error)
 	SubscriptionPlanByID(context.Context, int64) (store.SubscriptionPlan, error)
 	CreateSubscriptionPlan(context.Context, store.PlanInput) (store.SubscriptionPlan, error)
@@ -149,6 +153,14 @@ func New(dependencies Dependencies) http.Handler {
 			authenticated.Get("/subscription/current", api.currentSubscription)
 			authenticated.Get("/subscription/dashboard", api.subscriptionDashboard)
 			authenticated.Post("/subscription/redeem", api.redeemSubscription)
+			authenticated.Post("/tunnel/list", api.listTunnels)
+			authenticated.Post("/forward/list", api.listForwards)
+			authenticated.Post("/forward/create", api.createForward)
+			authenticated.Post("/forward/update", api.updateForward)
+			authenticated.Post("/forward/delete", api.deleteForward)
+			authenticated.Post("/forward/force-delete", api.deleteForward)
+			authenticated.Post("/forward/pause", api.pauseForward)
+			authenticated.Post("/forward/resume", api.resumeForward)
 
 			authenticated.Group(func(admin chi.Router) {
 				admin.Use(requireAdmin)
@@ -183,6 +195,13 @@ func New(dependencies Dependencies) http.Handler {
 				admin.Put("/admin/subscription/users/{userId}", api.adjustSubscription)
 				admin.Delete("/admin/subscription/users/{userId}", api.removeSubscription)
 				admin.Post("/admin/subscription/users/{userId}/reset-quota", api.resetSubscriptionQuota)
+				admin.Post("/tunnel/create", api.createTunnel)
+				admin.Post("/tunnel/update", api.updateTunnel)
+				admin.Post("/tunnel/delete", api.deleteTunnel)
+				admin.Post("/speed-limit/list", api.listSpeedLimits)
+				admin.Post("/speed-limit/create", api.createSpeedLimit)
+				admin.Post("/speed-limit/update", api.updateSpeedLimit)
+				admin.Post("/speed-limit/delete", api.deleteSpeedLimit)
 			})
 		})
 	})

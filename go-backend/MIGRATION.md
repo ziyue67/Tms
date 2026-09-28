@@ -21,11 +21,12 @@ database, and deployment tooling can continue to use the same interfaces.
 - user administration, account password changes, user deletion cleanup, traffic reset, and package dashboard queries;
 - subscription plans, user activation, redeem-code generation/consumption, quota audits, dashboard data, and admin lifecycle APIs.
 - authenticated node flow/config upload compatibility endpoints with AES payload decoding and atomic usage updates.
+- basic tunnel, forward, and speed-limit CRUD/query routes using the existing schema and response contract.
 
 ## Remaining migration order
 
 1. Captcha image generation/track validation.
-2. Tunnels, forwards, speed limits, landing rules, and inbound protocol CRUD.
+2. Landing rules and inbound protocol CRUD/auto-provision orchestration.
 3. Payment providers, signed callbacks, flow ingestion, scheduled access maintenance, and schema migration startup.
 4. Subscription text/Clash output, version checks, and remaining OpenAPI endpoints.
 5. Full API contract comparison, production Compose switch, and removal of the Java source tree.

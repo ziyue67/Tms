@@ -105,6 +105,12 @@ func (s *fakeStore) UserPackage(context.Context, int64) (store.UserPackage, erro
 func (s *fakeStore) RecordTrafficUsage(context.Context, int64, int64, int64, int64, int64) error {
 	return nil
 }
+func (s *fakeStore) QueryMaps(context.Context, string, ...any) ([]map[string]any, error) {
+	return []map[string]any{}, nil
+}
+func (s *fakeStore) InsertMap(context.Context, string, map[string]any) (int64, error) { return 1, nil }
+func (s *fakeStore) UpdateMap(context.Context, string, int64, map[string]any) error   { return nil }
+func (s *fakeStore) DeleteByID(context.Context, string, int64) error                  { return nil }
 func (s *fakeStore) SubscriptionPlans(context.Context, bool) ([]store.SubscriptionPlan, error) {
 	return []store.SubscriptionPlan{}, nil
 }
