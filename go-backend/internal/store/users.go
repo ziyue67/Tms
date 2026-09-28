@@ -296,6 +296,35 @@ func (s *Store) UserPackage(ctx context.Context, userID int64) (UserPackage, err
 	return UserPackage{UserInfo: info, TunnelPermissions: permissions, Forwards: forwards, StatisticsFlows: statistics}, nil
 }
 
+func (s *Store) RecordTrafficUsage(ctx context.Context, forwardID, userID, userTunnelID int64, upload, download int64) error {
+	if upload < 0 {
+		upload = 0
+	}
+	if download < 0 {
+		download = 0
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, s.bind("UPDATE "+s.quote("forward")+" SET "+s.quote("in_flow")+" = "+s.quote("in_flow")+" + ?, "+s.quote("out_flow")+" = "+s.quote("out_flow")+" + ? WHERE "+s.quote("id")+" = ?"), download, upload, forwardID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, s.bind("UPDATE "+s.quote("user")+" SET "+s.quote("in_flow")+" = "+s.quote("in_flow")+" + ?, "+s.quote("out_flow")+" = "+s.quote("out_flow")+" + ? WHERE "+s.quote("id")+" = ?"), download, upload, userID); err != nil {
+		return err
+	}
+	if userTunnelID > 0 {
+		if _, err := tx.ExecContext(ctx, s.bind("UPDATE "+s.quote("user_tunnel")+" SET "+s.quote("in_flow")+" = "+s.quote("in_flow")+" + ?, "+s.quote("out_flow")+" = "+s.quote("out_flow")+" + ? WHERE "+s.quote("id")+" = ?"), download, upload, userTunnelID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, s.bind("UPDATE "+s.quote("user_subscription")+" SET "+s.quote("traffic_used_bytes")+" = "+s.quote("traffic_used_bytes")+" + ?, "+s.quote("updated_time")+" = ? WHERE "+s.quote("user_id")+" = ? AND "+s.quote("status")+" = 1"), upload+download, time.Now().UnixMilli(), userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) attachSubscription(ctx context.Context, user *User) error {
 	query := "SELECT us." + s.quote("plan_id") + ", p." + s.quote("name") + ", us." + s.quote("traffic_limit_bytes") +
 		", us." + s.quote("traffic_used_bytes") + ", us." + s.quote("expires_at") + ", us." + s.quote("max_forwards") + ", p." + s.quote("reset_day") +

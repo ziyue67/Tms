@@ -20,6 +20,7 @@ database, and deployment tooling can continue to use the same interfaces.
 - node CRUD, install command generation, node status transitions, live system info, and AES-GCM WebSocket command correlation;
 - user administration, account password changes, user deletion cleanup, traffic reset, and package dashboard queries;
 - subscription plans, user activation, redeem-code generation/consumption, quota audits, dashboard data, and admin lifecycle APIs.
+- authenticated node flow/config upload compatibility endpoints with AES payload decoding and atomic usage updates.
 
 ## Remaining migration order
 

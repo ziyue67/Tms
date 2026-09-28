@@ -102,6 +102,9 @@ func (s *fakeStore) DeleteUserCascade(context.Context, int64) error { return nil
 func (s *fakeStore) UserPackage(context.Context, int64) (store.UserPackage, error) {
 	return store.UserPackage{}, nil
 }
+func (s *fakeStore) RecordTrafficUsage(context.Context, int64, int64, int64, int64, int64) error {
+	return nil
+}
 func (s *fakeStore) SubscriptionPlans(context.Context, bool) ([]store.SubscriptionPlan, error) {
 	return []store.SubscriptionPlan{}, nil
 }

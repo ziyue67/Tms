@@ -46,6 +46,7 @@ type DataStore interface {
 	UserCleanupCommands(context.Context, int64) ([]store.CleanupCommand, error)
 	DeleteUserCascade(context.Context, int64) error
 	UserPackage(context.Context, int64) (store.UserPackage, error)
+	RecordTrafficUsage(context.Context, int64, int64, int64, int64, int64) error
 	SubscriptionPlans(context.Context, bool) ([]store.SubscriptionPlan, error)
 	SubscriptionPlanByID(context.Context, int64) (store.SubscriptionPlan, error)
 	CreateSubscriptionPlan(context.Context, store.PlanInput) (store.SubscriptionPlan, error)
@@ -119,6 +120,8 @@ func New(dependencies Dependencies) http.Handler {
 	router.Use(cors, recoverer(api.logger), requestLogger(api.logger))
 
 	router.HandleFunc("/flow/test", api.liveness)
+	router.HandleFunc("/flow/config", api.flowConfig)
+	router.HandleFunc("/flow/upload", api.flowUpload)
 	if api.nodeHub != nil {
 		router.Handle("/system-info", api.nodeHub)
 	}
