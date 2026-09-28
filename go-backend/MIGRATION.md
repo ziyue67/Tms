@@ -16,15 +16,18 @@ database, and deployment tooling can continue to use the same interfaces.
 - `GET /api/v1/auth/config`;
 - public and administrator site configuration APIs under `/api/v1/config`;
 - administrator role enforcement from JWT `role_id`.
+- registration, password reset, Redis verification codes, SMTP delivery, rate limits, and administrator email diagnostics;
+- node CRUD, install command generation, node status transitions, live system info, and AES-GCM WebSocket command correlation;
+- user administration, account password changes, user deletion cleanup, traffic reset, and package dashboard queries;
+- subscription plans, user activation, redeem-code generation/consumption, quota audits, dashboard data, and admin lifecycle APIs.
 
 ## Remaining migration order
 
-1. Registration, password reset, email delivery, Redis verification codes, and captcha.
-2. User administration and subscription plans, redemption, quota, and payment callbacks.
-3. Nodes, tunnels, forwards, speed limits, landing rules, and inbound protocols.
-4. Node WebSocket authentication, AES payload compatibility, request correlation, and live status.
-5. Flow ingestion, scheduled maintenance, schema migrations, subscription output, and version checks.
-6. Full API contract comparison, production Compose switch, and removal of the Java source tree.
+1. Captcha image generation/track validation.
+2. Tunnels, forwards, speed limits, landing rules, and inbound protocol CRUD.
+3. Payment providers, signed callbacks, flow ingestion, scheduled access maintenance, and schema migration startup.
+4. Subscription text/Clash output, version checks, and remaining OpenAPI endpoints.
+5. Full API contract comparison, production Compose switch, and removal of the Java source tree.
 
 The local hybrid Compose file runs the Go service as `go-backend`. Production
 image publishing remains on the existing backend until the compatibility suite

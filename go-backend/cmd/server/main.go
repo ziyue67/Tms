@@ -14,7 +14,9 @@ import (
 	"github.com/ziyue67/tms/go-backend/internal/config"
 	"github.com/ziyue67/tms/go-backend/internal/database"
 	"github.com/ziyue67/tms/go-backend/internal/httpapi"
+	"github.com/ziyue67/tms/go-backend/internal/nodehub"
 	"github.com/ziyue67/tms/go-backend/internal/store"
+	"github.com/ziyue67/tms/go-backend/internal/verification"
 )
 
 var (
@@ -50,14 +52,18 @@ func main() {
 
 	repository := store.New(db, dialect)
 	tokens := auth.NewTokenService(cfg.JWTSecret, 90*24*time.Hour)
+	verificationService := verification.New(cfg.Auth, redisClient, repository, nil)
+	nodeHub := nodehub.New(repository, tokens, logger)
 	handler := httpapi.New(httpapi.Dependencies{
-		Config:      cfg,
-		Store:       repository,
-		Tokens:      tokens,
-		Redis:       redisClient,
-		Logger:      logger,
-		BuildCommit: buildCommit,
-		BuildTime:   buildTime,
+		Config:       cfg,
+		Store:        repository,
+		Tokens:       tokens,
+		Redis:        redisClient,
+		Verification: verificationService,
+		NodeHub:      nodeHub,
+		Logger:       logger,
+		BuildCommit:  buildCommit,
+		BuildTime:    buildTime,
 	})
 
 	server := &http.Server{

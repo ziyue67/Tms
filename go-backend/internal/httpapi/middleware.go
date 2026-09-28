@@ -70,6 +70,11 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			started := time.Now()
+			if r.URL.Path == "/system-info" {
+				next.ServeHTTP(w, r)
+				logger.Info("websocket request ended", "path", r.URL.Path, "duration_ms", time.Since(started).Milliseconds())
+				return
+			}
 			wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(wrapped, r)
 			logger.Info("request", "method", r.Method, "path", r.URL.Path, "status", wrapped.status, "duration_ms", time.Since(started).Milliseconds())

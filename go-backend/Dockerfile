@@ -2,7 +2,8 @@ FROM golang:1.24-alpine AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+ARG GOPROXY=https://proxy.golang.org,direct
+RUN GOPROXY="$GOPROXY" go mod download
 COPY . .
 
 ARG BUILD_COMMIT=dev

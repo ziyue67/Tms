@@ -34,6 +34,120 @@ func (s *fakeStore) UserByLogin(_ context.Context, login string) (store.User, er
 	return store.User{}, sql.ErrNoRows
 }
 
+func (s *fakeStore) UserByEmail(_ context.Context, email string) (store.User, error) {
+	if s.user.Email.Valid && email == s.user.Email.String {
+		return s.user, nil
+	}
+	return store.User{}, sql.ErrNoRows
+}
+
+func (s *fakeStore) UsernameExists(_ context.Context, username string) (bool, error) {
+	return s.user.Username != "" && s.user.Username == username, nil
+}
+
+func (s *fakeStore) CountUsersByEmailDomain(context.Context, string) (int64, error) {
+	return 0, nil
+}
+
+func (s *fakeStore) CreateUser(_ context.Context, input store.NewUser) (store.User, error) {
+	s.user = store.User{ID: 99, Username: input.Username, Email: sql.NullString{String: input.Email, Valid: true}, Password: input.Password, RoleID: 1, Status: 1}
+	return s.user, nil
+}
+
+func (s *fakeStore) NodeBySecret(context.Context, string) (store.NodeConnection, error) {
+	return store.NodeConnection{}, sql.ErrNoRows
+}
+
+func (s *fakeStore) UpdateNodeConnection(context.Context, int64, string, int, int, int) error {
+	return nil
+}
+
+func (s *fakeStore) MarkNodeOffline(context.Context, int64) (bool, error) { return true, nil }
+
+func (s *fakeStore) Nodes(context.Context) ([]store.Node, error) { return []store.Node{}, nil }
+func (s *fakeStore) NodeByID(context.Context, int64) (store.Node, error) {
+	return store.Node{}, sql.ErrNoRows
+}
+func (s *fakeStore) CreateNode(context.Context, store.NodeInput) (store.Node, error) {
+	return store.Node{ID: 1}, nil
+}
+func (s *fakeStore) UpdateNode(context.Context, int64, store.NodeInput) error { return nil }
+func (s *fakeStore) RenameNode(context.Context, int64, string) (bool, error)  { return true, nil }
+func (s *fakeStore) DeleteNode(context.Context, int64) error                  { return nil }
+func (s *fakeStore) UserByID(context.Context, int64) (store.User, error) {
+	if s.user.ID == 0 {
+		return store.User{}, sql.ErrNoRows
+	}
+	return s.user, nil
+}
+func (s *fakeStore) Users(context.Context) ([]store.User, error) { return []store.User{}, nil }
+func (s *fakeStore) UsernameExistsExcept(context.Context, string, int64) (bool, error) {
+	return false, nil
+}
+func (s *fakeStore) CreateManagedUser(context.Context, store.ManagedUserInput) error { return nil }
+func (s *fakeStore) UpdateManagedUser(context.Context, int64, store.ManagedUserInput) error {
+	return nil
+}
+func (s *fakeStore) UpdateUsernamePassword(context.Context, int64, string, string) error {
+	return nil
+}
+func (s *fakeStore) ResetUserFlow(context.Context, int64) (bool, error) { return true, nil }
+func (s *fakeStore) ResetUserTunnelFlow(context.Context, int64) (bool, error) {
+	return true, nil
+}
+func (s *fakeStore) UserCleanupCommands(context.Context, int64) ([]store.CleanupCommand, error) {
+	return nil, nil
+}
+func (s *fakeStore) DeleteUserCascade(context.Context, int64) error { return nil }
+func (s *fakeStore) UserPackage(context.Context, int64) (store.UserPackage, error) {
+	return store.UserPackage{}, nil
+}
+func (s *fakeStore) SubscriptionPlans(context.Context, bool) ([]store.SubscriptionPlan, error) {
+	return []store.SubscriptionPlan{}, nil
+}
+func (s *fakeStore) SubscriptionPlanByID(context.Context, int64) (store.SubscriptionPlan, error) {
+	return store.SubscriptionPlan{}, sql.ErrNoRows
+}
+func (s *fakeStore) CreateSubscriptionPlan(context.Context, store.PlanInput) (store.SubscriptionPlan, error) {
+	return store.SubscriptionPlan{}, nil
+}
+func (s *fakeStore) UpdateSubscriptionPlan(context.Context, int64, store.PlanInput) (store.SubscriptionPlan, error) {
+	return store.SubscriptionPlan{}, nil
+}
+func (s *fakeStore) DisableSubscriptionPlan(context.Context, int64) (store.SubscriptionPlan, error) {
+	return store.SubscriptionPlan{}, nil
+}
+func (s *fakeStore) DeleteSubscriptionPlan(context.Context, int64) (bool, error) {
+	return true, nil
+}
+func (s *fakeStore) RedeemCodes(context.Context, *int64, *int) ([]store.RedeemCode, error) {
+	return []store.RedeemCode{}, nil
+}
+func (s *fakeStore) GenerateRedeemCodes(context.Context, int64, string, int) ([]string, error) {
+	return []string{}, nil
+}
+func (s *fakeStore) RevokeRedeemCode(context.Context, int64) error { return nil }
+func (s *fakeStore) DeleteRedeemCode(context.Context, int64) error { return nil }
+func (s *fakeStore) CurrentSubscription(context.Context, int64, bool) (*store.UserSubscription, error) {
+	return nil, nil
+}
+func (s *fakeStore) SubscriptionAudit(context.Context, int64) ([]store.QuotaLog, error) {
+	return []store.QuotaLog{}, nil
+}
+func (s *fakeStore) AdjustSubscription(context.Context, int64, map[string]any) (*store.UserSubscription, error) {
+	return nil, nil
+}
+func (s *fakeStore) RemoveSubscription(context.Context, int64) error { return nil }
+func (s *fakeStore) ResetSubscriptionQuota(context.Context, int64) (*store.UserSubscription, error) {
+	return nil, nil
+}
+func (s *fakeStore) RedeemSubscription(context.Context, int64, string) (*store.UserSubscription, error) {
+	return nil, nil
+}
+func (s *fakeStore) SubscriptionDashboard(context.Context, int64) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+
 func (s *fakeStore) UpdatePassword(_ context.Context, _ int64, encoded string) error {
 	s.updatedPassword = encoded
 	return nil

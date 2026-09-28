@@ -15,6 +15,7 @@ type Config struct {
 	JWTSecret string
 	Database  Database
 	Redis     Redis
+	Auth      Auth
 }
 
 type Database struct {
@@ -38,6 +39,12 @@ type Redis struct {
 	Database int
 	TLS      bool
 	Timeout  time.Duration
+}
+
+type Auth struct {
+	VerificationExpiry   time.Duration
+	VerificationCooldown time.Duration
+	ResetURLBase         string
 }
 
 func Load() (Config, error) {
@@ -76,6 +83,11 @@ func load(getenv func(string) string) (Config, error) {
 			TLS:      boolValue(getenv, "REDIS_SSL", false),
 			Timeout:  durationValue(getenv, "REDIS_TIMEOUT", 2*time.Second),
 		},
+		Auth: Auth{
+			VerificationExpiry:   secondsValue(getenv, "VERIFY_CODE_EXPIRE_SECONDS", 600, 60),
+			VerificationCooldown: secondsValue(getenv, "VERIFY_CODE_COOLDOWN_SECONDS", 60, 10),
+			ResetURLBase:         strings.TrimRight(value(getenv, "TMS_RESET_URL_BASE", value(getenv, "PUBLIC_BASE_URL", "http://localhost:6366")), "/"),
+		},
 	}
 
 	if cfg.JWTSecret == "" {
@@ -94,6 +106,14 @@ func load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("SERVER_PORT must be between 1 and 65535: %d", cfg.Port)
 	}
 	return cfg, nil
+}
+
+func secondsValue(getenv func(string) string, key string, fallback, minimum int) time.Duration {
+	value := intValue(getenv, key, fallback)
+	if value < minimum {
+		value = minimum
+	}
+	return time.Duration(value) * time.Second
 }
 
 func (c Config) ListenAddress() string {
