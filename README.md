@@ -161,13 +161,13 @@ rm -f /opt/tms-deploy-*.sh /opt/tms-deploy-*.log
 
 ## 开发
 
-后端目录为 `springboot-backend`，前端目录为 `vite-frontend`。
+Go 后端重构目录为 `go-backend`，原 `springboot-backend` 在迁移完成前仅作为兼容行为参考；前端目录为 `vite-frontend`。
 
 后端测试：
 
 ```bash
-cd springboot-backend
-mvn test
+cd go-backend
+go test ./...
 ```
 
 前端构建：

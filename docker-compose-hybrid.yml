@@ -54,10 +54,10 @@ services:
 
   backend:
     build:
-      context: ./springboot-backend
+      context: ./go-backend
       dockerfile: Dockerfile
-    image: tms-backend:hybrid
-    container_name: springboot-backend
+    image: tms-backend:go
+    container_name: go-backend
     restart: unless-stopped
     environment:
       DB_HOST: mysql
@@ -69,7 +69,6 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me-now}
       LOG_DIR: /app/logs
-      JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
     ports:
       - "${BACKEND_PORT}:6365"
     volumes:
@@ -81,6 +80,12 @@ services:
         condition: service_healthy
     networks:
       - gost-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6365/flow/test"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   frontend:
     build:
@@ -92,7 +97,8 @@ services:
     ports:
       - "${FRONTEND_PORT}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - gost-network
 

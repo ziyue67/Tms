@@ -1,0 +1,41 @@
+name: Validate Go Backend
+
+on:
+  pull_request:
+    paths:
+      - "go-backend/**"
+      - "docker-compose-hybrid.yml"
+      - ".github/workflows/go-backend.yml"
+  push:
+    branches:
+      - refactor/go-backend
+    paths:
+      - "go-backend/**"
+      - "docker-compose-hybrid.yml"
+      - ".github/workflows/go-backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go-backend/go.mod
+          cache-dependency-path: go-backend/go.sum
+
+      - name: Test
+        working-directory: go-backend
+        run: go test ./...
+
+      - name: Vet
+        working-directory: go-backend
+        run: go vet ./...
+
+      - name: Build container
+        run: docker build -t tms-go-backend:test ./go-backend
