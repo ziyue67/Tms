@@ -61,7 +61,7 @@ cmd_purge() {
   fi
 
   # 兜底:compose 文件丢了也要能清干净,按容器名再来一遍
-  docker rm -f gost-mysql springboot-backend vite-frontend tms-caddy 2>/dev/null || true
+  docker rm -f gost-mysql go-backend vite-frontend tms-caddy 2>/dev/null || true
 
   # 卷名会被 compose 加上项目名前缀(项目名 = 目录名),写死 mysql_data 删不掉。
   # 按后缀匹配才能把 xxx_mysql_data 这种一并带走。
@@ -79,7 +79,7 @@ cmd_purge() {
 
 cmd_status() {
   echo "📊 容器状态:"
-  docker ps -a --filter "name=gost-mysql" --filter "name=springboot-backend" --filter "name=vite-frontend" \
+  docker ps -a --filter "name=gost-mysql" --filter "name=go-backend" --filter "name=vite-frontend" \
     --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || docker ps -a
   echo ""
   echo "📁 面板目录: $PANEL_DIR"

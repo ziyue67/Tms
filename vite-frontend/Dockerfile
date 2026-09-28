@@ -5,7 +5,7 @@
 # 而且经常直接挂(内存、原生模块编译)。
 # 而前端产物就是一堆 HTML/JS/CSS 静态文件,跟 CPU 架构毫无关系,
 # 只有下面的 nginx 运行阶段才需要分架构。
-FROM --platform=$BUILDPLATFORM node:20.19.0 AS builder
+FROM --platform=$BUILDPLATFORM node:20.19.0-alpine AS builder
 
 WORKDIR /app
 
@@ -26,4 +26,4 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"] 
+CMD ["nginx", "-g", "daemon off;"]

@@ -277,7 +277,7 @@ EOF
 # 查看运行状态
 show_status() {
   echo "📊 TMS 面板容器状态:"
-  docker ps -a --filter "name=gost-mysql" --filter "name=springboot-backend" --filter "name=vite-frontend" \
+  docker ps -a --filter "name=gost-mysql" --filter "name=go-backend" --filter "name=vite-frontend" \
     --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || docker ps -a
 }
 
@@ -337,14 +337,14 @@ purge_panel() {
     fi
     # 不依赖任何文件,按名字强制删干净。
     # caddy 也要一起清:它连着 gost-network,不删的话后面 network rm 一定失败
-    docker rm -f gost-mysql springboot-backend vite-frontend tms-caddy 2>/dev/null || true
+    docker rm -f gost-mysql go-backend vite-frontend tms-caddy 2>/dev/null || true
     # 卷名会被 compose 加上项目名前缀(项目名 = 安装目录名),写死名字删不掉
     # xxx_mysql_data 这种。上面的 compose down -v 能处理,但 compose 文件丢了就只剩这里,
     # 所以按后缀匹配再兜一次 —— 否则数据卷留着,重装时会拿到上一次的旧数据库。
     docker volume rm mysql_data backend_logs tms_caddy_data tms_caddy_config 2>/dev/null || true
     docker volume ls -q 2>/dev/null       | grep -E '(^|_)(mysql_data|backend_logs|tms_caddy_data|tms_caddy_config)$'       | xargs -r docker volume rm 2>/dev/null || true
     docker network rm gost-network 2>/dev/null || true
-    docker rmi -f ghcr.io/ziyue67/springboot-backend:latest ghcr.io/ziyue67/vite-frontend:latest mysql:5.7 2>/dev/null || true
+    docker rmi -f ghcr.io/ziyue67/go-backend:latest ghcr.io/ziyue67/vite-frontend:latest mysql:5.7 2>/dev/null || true
     # 只清悬空镜像(不动其他应用),回收磁盘
     docker image prune -f 2>/dev/null || true
   fi
@@ -606,7 +606,7 @@ EOF
   # 容器一直 unhealthy。全新安装本就该是干净空卷,这里强制清一遍,保证一键装到底。
   echo "[2/4] 清理旧容器与数据卷(确保全新安装干净)..."
   $DOCKER_CMD down -v --remove-orphans >/dev/null 2>&1 || true
-  docker rm -f gost-mysql springboot-backend vite-frontend >/dev/null 2>&1 || true
+  docker rm -f gost-mysql go-backend vite-frontend >/dev/null 2>&1 || true
   docker volume rm mysql_data backend_logs >/dev/null 2>&1 || true
   echo "      ✔ 完成"
 
@@ -712,8 +712,8 @@ update_panel() {
   # 检查后端容器健康状态
   echo "🔍 检查后端服务状态..."
   for i in {1..90}; do
-    if docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
-      BACKEND_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo "unknown")
+    if docker ps --format "{{.Names}}" | grep -q "^go-backend$"; then
+      BACKEND_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' go-backend 2>/dev/null || echo "unknown")
       if [[ "$BACKEND_HEALTH" == "healthy" ]]; then
         echo "✅ 后端服务健康检查通过"
         break
@@ -729,7 +729,7 @@ update_panel() {
     fi
     if [ $i -eq 90 ]; then
       echo "❌ 后端服务启动超时（90秒）"
-      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo '容器不存在')"
+      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' go-backend 2>/dev/null || echo '容器不存在')"
       echo "🛑 更新终止"
       return 1
     fi
@@ -786,7 +786,7 @@ update_panel() {
   sleep 5
 
   # 先检查后端容器是否在运行
-  if ! docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
+  if ! docker ps --format "{{.Names}}" | grep -q "^go-backend$"; then
     echo "❌ 后端容器未运行，无法获取数据库配置"
     echo "🔍 当前运行的容器："
     docker ps --format "table {{.Names}}\t{{.Status}}"
@@ -794,7 +794,7 @@ update_panel() {
     return 1
   fi
 
-  DB_INFO=$(docker exec springboot-backend env | grep "^DB_" 2>/dev/null || echo "")
+  DB_INFO=$(docker exec go-backend env | grep "^DB_" 2>/dev/null || echo "")
 
   if [[ -n "$DB_INFO" ]]; then
     DB_NAME=$(echo "$DB_INFO" | grep "^DB_NAME=" | cut -d'=' -f2)
@@ -809,8 +809,8 @@ update_panel() {
   else
     echo "❌ 无法获取数据库配置信息"
     echo "🔍 尝试诊断问题："
-    echo "   容器状态: $(docker inspect -f '{{.State.Status}}' springboot-backend 2>/dev/null || echo '容器不存在')"
-    echo "   健康状态: $(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo '无健康检查')"
+    echo "   容器状态: $(docker inspect -f '{{.State.Status}}' go-backend 2>/dev/null || echo '容器不存在')"
+    echo "   健康状态: $(docker inspect -f '{{.State.Health.Status}}' go-backend 2>/dev/null || echo '无健康检查')"
 
     # 尝试从 .env 文件读取配置
     if [[ -f ".env" ]]; then
@@ -1398,7 +1398,7 @@ export_migration_sql() {
   echo "🔍 获取数据库配置信息..."
 
   # 先检查后端容器是否在运行
-  if ! docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
+  if ! docker ps --format "{{.Names}}" | grep -q "^go-backend$"; then
     echo "❌ 后端容器未运行，尝试从 .env 文件读取配置..."
 
     # 从 .env 文件读取配置
@@ -1419,7 +1419,7 @@ export_migration_sql() {
     fi
   else
     # 从容器环境变量获取数据库信息
-    DB_INFO=$(docker exec springboot-backend env | grep "^DB_" 2>/dev/null || echo "")
+    DB_INFO=$(docker exec go-backend env | grep "^DB_" 2>/dev/null || echo "")
 
     if [[ -n "$DB_INFO" ]]; then
       DB_NAME=$(echo "$DB_INFO" | grep "^DB_NAME=" | cut -d'=' -f2)

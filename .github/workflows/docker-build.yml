@@ -167,30 +167,23 @@ jobs:
             $TAGS \
             ./vite-frontend
 
-  build-java:
-    name: Build & Push Spring Boot Backend
+  build-go-backend:
+    name: Build & Push Go Backend
     needs: check-version
     # 同上:每次推 main 都重建,保证 :latest 是最新代码
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up JDK and Maven
-        uses: actions/setup-java@v3
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          java-version: 21
-          distribution: 'temurin'
+          go-version-file: go-backend/go.mod
+          cache-dependency-path: go-backend/go.sum
 
-      - name: Cache Maven dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
-
-      - name: Test and build Java JAR
-        working-directory: ./springboot-backend
-        run: mvn clean package
+      - name: Test Go backend
+        working-directory: ./go-backend
+        run: go test ./...
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -202,13 +195,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Java Docker images
+      - name: Build and push Go backend images
         run: |
           VERSION="${{ needs.check-version.outputs.version }}"
-          TAGS="-t ghcr.io/ziyue67/springboot-backend:latest"
+          TAGS="-t ghcr.io/ziyue67/go-backend:latest"
           # 版本号镜像只在该版本首次发布时打(同上)
           if [ "${{ needs.check-version.outputs.should_build }}" = "true" ]; then
-            TAGS="$TAGS -t ghcr.io/ziyue67/springboot-backend:${VERSION}"
+            TAGS="$TAGS -t ghcr.io/ziyue67/go-backend:${VERSION}"
           fi
           # 注入构建标识:面板拿它跟 GitHub 上 main 的最新 commit 比,判断有没有新版本
           docker buildx build \
@@ -217,7 +210,7 @@ jobs:
             --build-arg BUILD_COMMIT="${GITHUB_SHA:0:7}" \
             --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             $TAGS \
-            ./springboot-backend
+            ./go-backend
 
   build-redis:
     name: Build & Push Redis Image
@@ -249,7 +242,7 @@ jobs:
 
   create-release:
     name: Create Release and Tag
-    needs: [check-version, build-gost, build-vite, build-java, build-redis]
+    needs: [check-version, build-gost, build-vite, build-go-backend, build-redis]
     if: needs.check-version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
