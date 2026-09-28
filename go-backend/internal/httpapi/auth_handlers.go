@@ -61,9 +61,15 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		writeResponse(w, Error(-2, "读取验证码配置失败"))
 		return
 	} else if enabled {
-		// Fail closed until the captcha protocol is migrated; bypassing it would weaken login security.
-		writeResponse(w, Failure("验证码校验失败"))
-		return
+		if strings.TrimSpace(request.CaptchaID) == "" || a.redis == nil {
+			writeResponse(w, Failure("验证码校验失败"))
+			return
+		}
+		result, consumeErr := a.redis.Eval(r.Context(), `if redis.call('GET',KEYS[1]) then redis.call('DEL',KEYS[1]); return 1 end; return 0`, []string{"tms:captcha:valid:" + request.CaptchaID}).Int()
+		if consumeErr != nil || result != 1 {
+			writeResponse(w, Failure("验证码校验失败"))
+			return
+		}
 	}
 
 	user, err := a.store.UserByLogin(r.Context(), request.Username)

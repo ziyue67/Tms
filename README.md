@@ -46,7 +46,7 @@ chmod +x panel_install.sh
 
 ```bash
 psql 'postgresql://用户名:密码@数据库地址:5432/gost' \
-  -f springboot-backend/src/main/resources/db/tms-postgres.sql
+  -f db/tms-postgres.sql
 ```
 
 ### 安装配置
@@ -132,7 +132,7 @@ tms update
 
 ```bash
 docker compose ps
-docker logs --tail 200 springboot-backend
+docker logs --tail 200 go-backend
 docker logs --tail 200 vite-frontend
 ```
 
@@ -161,7 +161,7 @@ rm -f /opt/tms-deploy-*.sh /opt/tms-deploy-*.log
 
 ## 开发
 
-Go 后端重构目录为 `go-backend`，原 `springboot-backend` 在迁移完成前仅作为兼容行为参考；前端目录为 `vite-frontend`。
+后端目录为 `go-backend`，前端目录为 `vite-frontend`。
 
 后端测试：
 

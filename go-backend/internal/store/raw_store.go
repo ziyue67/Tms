@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/ziyue67/tms/go-backend/internal/database"
 )
 
 // QueryMaps is intentionally limited to SQL assembled by the backend. Callers
@@ -32,6 +34,7 @@ func (s *Store) QueryMaps(ctx context.Context, query string, args ...any) ([]map
 		}
 		item := make(map[string]any, len(columns))
 		for index, name := range columns {
+			name = camelCase(name)
 			if bytes, ok := values[index].([]byte); ok {
 				item[name] = string(bytes)
 			} else {
@@ -58,7 +61,14 @@ func (s *Store) InsertMap(ctx context.Context, table string, values map[string]a
 		placeholders[index] = "?"
 	}
 	query := "INSERT INTO " + s.quote(table) + " (" + s.columns(columns...) + ") VALUES (" + strings.Join(placeholders, ", ") + ")"
-	result, err := s.db.ExecContext(ctx, s.bind(query), args...)
+	if s.dialect == database.PostgreSQL {
+		var id int64
+		if err := s.db.QueryRowContext(ctx, s.bind(query+" RETURNING "+s.quote("id")), args...).Scan(&id); err != nil {
+			return 0, err
+		}
+		return id, nil
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -133,3 +143,13 @@ func asInt64(value any) (int64, error) {
 }
 
 func AsInt64(value any) (int64, error) { return asInt64(value) }
+
+func camelCase(value string) string {
+	parts := strings.Split(strings.ToLower(value), "_")
+	for index := 1; index < len(parts); index++ {
+		if parts[index] != "" {
+			parts[index] = strings.ToUpper(parts[index][:1]) + parts[index][1:]
+		}
+	}
+	return strings.Join(parts, "")
+}

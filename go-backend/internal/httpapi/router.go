@@ -11,6 +11,7 @@ import (
 	"github.com/ziyue67/tms/go-backend/internal/auth"
 	"github.com/ziyue67/tms/go-backend/internal/config"
 	"github.com/ziyue67/tms/go-backend/internal/nodehub"
+	"github.com/ziyue67/tms/go-backend/internal/payment"
 	"github.com/ziyue67/tms/go-backend/internal/store"
 	"github.com/ziyue67/tms/go-backend/internal/verification"
 )
@@ -51,6 +52,14 @@ type DataStore interface {
 	InsertMap(context.Context, string, map[string]any) (int64, error)
 	UpdateMap(context.Context, string, int64, map[string]any) error
 	DeleteByID(context.Context, string, int64) error
+	CreatePaymentOrder(context.Context, store.PaymentOrder) (store.PaymentOrder, error)
+	PaymentOrderByNo(context.Context, string, *int64) (*store.PaymentOrder, error)
+	PaymentOrders(context.Context, *int64) ([]store.PaymentOrder, error)
+	FailPaymentOrder(context.Context, string, string) error
+	RetryPaymentOrder(context.Context, string) (*store.PaymentOrder, error)
+	CompletePaymentOrder(context.Context, string, string, string) (*store.PaymentOrder, error)
+	SubscriptionByToken(context.Context, string) (store.SubscriptionOutput, error)
+	SubscriptionStoreHeader(context.Context, string, *int64) (store.User, *store.TunnelPermission, error)
 	SubscriptionPlans(context.Context, bool) ([]store.SubscriptionPlan, error)
 	SubscriptionPlanByID(context.Context, int64) (store.SubscriptionPlan, error)
 	CreateSubscriptionPlan(context.Context, store.PlanInput) (store.SubscriptionPlan, error)
@@ -87,6 +96,7 @@ type Dependencies struct {
 	Redis        *redis.Client
 	Verification VerificationService
 	NodeHub      *nodehub.Hub
+	Payments     *payment.Service
 	Logger       *slog.Logger
 	BuildCommit  string
 	BuildTime    string
@@ -99,6 +109,7 @@ type API struct {
 	redis        *redis.Client
 	verification VerificationService
 	nodeHub      *nodehub.Hub
+	payments     *payment.Service
 	logger       *slog.Logger
 	buildCommit  string
 	buildTime    string
@@ -112,6 +123,7 @@ func New(dependencies Dependencies) http.Handler {
 		redis:        dependencies.Redis,
 		verification: dependencies.Verification,
 		nodeHub:      dependencies.NodeHub,
+		payments:     dependencies.Payments,
 		logger:       dependencies.Logger,
 		buildCommit:  dependencies.BuildCommit,
 		buildTime:    dependencies.BuildTime,
@@ -142,6 +154,15 @@ func New(dependencies Dependencies) http.Handler {
 		v1.Post("/auth/reset-password", api.resetPassword)
 		v1.Post("/auth/register", api.register)
 		v1.Post("/config/get", api.publicConfigValue)
+		v1.Post("/captcha/check", api.captchaCheck)
+		v1.Post("/captcha/generate", api.captchaGenerate)
+		v1.Post("/captcha/verify", api.captchaVerify)
+		v1.Post("/payment/wechat/notify", api.paymentWechatCallback)
+		v1.Post("/payment/stripe/webhook", api.paymentStripeCallback)
+		v1.Post("/payment/{provider}/notify", api.paymentFormCallback)
+		v1.Get("/open_api/sub", api.openSubscription)
+		v1.Get("/open_api/clash", api.openClashSubscription)
+		v1.Get("/open_api/sub_store", api.openSubscriptionStore)
 
 		v1.Group(func(authenticated chi.Router) {
 			authenticated.Use(authenticate(api.tokens))
@@ -153,7 +174,7 @@ func New(dependencies Dependencies) http.Handler {
 			authenticated.Get("/subscription/current", api.currentSubscription)
 			authenticated.Get("/subscription/dashboard", api.subscriptionDashboard)
 			authenticated.Post("/subscription/redeem", api.redeemSubscription)
-			authenticated.Post("/tunnel/list", api.listTunnels)
+			authenticated.Post("/version/info", api.versionInfo)
 			authenticated.Post("/forward/list", api.listForwards)
 			authenticated.Post("/forward/create", api.createForward)
 			authenticated.Post("/forward/update", api.updateForward)
@@ -161,6 +182,14 @@ func New(dependencies Dependencies) http.Handler {
 			authenticated.Post("/forward/force-delete", api.deleteForward)
 			authenticated.Post("/forward/pause", api.pauseForward)
 			authenticated.Post("/forward/resume", api.resumeForward)
+			authenticated.Post("/forward/diagnose", api.diagnoseForward)
+			authenticated.Post("/forward/update-order", api.updateForwardOrder)
+			authenticated.Post("/tunnel/user/tunnel", api.currentUserTunnels)
+			authenticated.Get("/payment/providers", api.paymentProviders)
+			authenticated.Post("/payment/orders", api.createPaymentOrder)
+			authenticated.Get("/payment/orders", api.myPaymentOrders)
+			authenticated.Get("/payment/orders/{orderNo}", api.paymentOrder)
+			authenticated.Post("/inbound/my-lines", api.myInboundLines)
 
 			authenticated.Group(func(admin chi.Router) {
 				admin.Use(requireAdmin)
@@ -196,12 +225,54 @@ func New(dependencies Dependencies) http.Handler {
 				admin.Delete("/admin/subscription/users/{userId}", api.removeSubscription)
 				admin.Post("/admin/subscription/users/{userId}/reset-quota", api.resetSubscriptionQuota)
 				admin.Post("/tunnel/create", api.createTunnel)
+				admin.Post("/tunnel/list", api.listTunnels)
 				admin.Post("/tunnel/update", api.updateTunnel)
 				admin.Post("/tunnel/delete", api.deleteTunnel)
+				admin.Post("/tunnel/user/assign", api.assignUserTunnel)
+				admin.Post("/tunnel/user/list", api.listUserTunnels)
+				admin.Post("/tunnel/user/remove", api.removeUserTunnel)
+				admin.Post("/tunnel/user/update", api.updateUserTunnel)
+				admin.Post("/tunnel/diagnose", api.diagnoseTunnel)
 				admin.Post("/speed-limit/list", api.listSpeedLimits)
 				admin.Post("/speed-limit/create", api.createSpeedLimit)
 				admin.Post("/speed-limit/update", api.updateSpeedLimit)
 				admin.Post("/speed-limit/delete", api.deleteSpeedLimit)
+				admin.Post("/speed-limit/tunnels", api.listTunnels)
+				admin.Post("/landing/create", api.createLanding)
+				admin.Post("/landing/list", api.listLandings)
+				admin.Post("/landing/rename", api.renameLanding)
+				admin.Post("/landing/delete", api.deleteLanding)
+				admin.Post("/landing/test", api.testLanding)
+				admin.Get("/custom-nodes", api.listCustomNodes)
+				admin.Post("/custom-nodes", api.importCustomNodes)
+				admin.Post("/custom-nodes/{nodeId}/assign", api.assignCustomNode)
+				admin.Delete("/custom-nodes/{nodeId}/assign/{userId}", api.unassignCustomNode)
+				admin.Post("/custom-nodes/{nodeId}/disable", api.disableCustomNode)
+				admin.Post("/custom-nodes/{nodeId}/enable", api.enableCustomNode)
+				admin.Delete("/custom-nodes/{nodeId}", api.deleteCustomNode)
+				admin.Post("/inbound/create", api.createInbound)
+				admin.Post("/inbound/one-click", api.oneClickInbound)
+				admin.Post("/inbound/one-click-relay", api.oneClickRelay)
+				admin.Post("/inbound/list", api.listInbounds)
+				admin.Post("/inbound/delete", api.deleteInbound)
+				admin.Post("/inbound/delete-by-node", api.deleteInboundsByNode)
+				admin.Post("/inbound/assign", api.assignInbound)
+				admin.Post("/inbound/assign-all", api.assignAllInbounds)
+				admin.Post("/inbound/assign-self", api.assignSelfInbounds)
+				admin.Post("/inbound/user-sub", api.inboundUserSub)
+				admin.Post("/inbound/user-lines", api.inboundUserLines)
+				admin.Post("/inbound/unassign", api.unassignInbound)
+				admin.Post("/inbound/line-status", api.inboundLineStatus)
+				admin.Post("/inbound/line-delete", api.deleteInboundLine)
+				admin.Post("/inbound/rename", api.renameInbound)
+				admin.Post("/inbound/auto-provision-targets", api.autoProvisionTargets)
+				admin.Post("/inbound/auto-provision-target", api.setAutoProvisionTarget)
+				admin.Post("/inbound/provision-subscribed-users", api.provisionSubscribers)
+				admin.Post("/inbound/provision-subscribed-users-relay", api.provisionSubscribers)
+				admin.Post("/inbound/reload-node", api.reloadNodeSingbox)
+				admin.Get("/admin/subscription/orders", api.adminPaymentOrders)
+				admin.Post("/admin/subscription/orders/{orderNo}/retry", api.retryPaymentOrder)
+				admin.Post("/admin/subscription/orders/{orderNo}/complete-test", api.completeTestPaymentOrder)
 			})
 		})
 	})

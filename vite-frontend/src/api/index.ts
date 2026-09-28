@@ -174,5 +174,5 @@ export const updateConfig = (name: string, value: string) => Network.post("/conf
 
 // 验证码相关接口
 export const checkCaptcha = () => Network.post("/captcha/check");
-export const generateCaptcha = () => Network.post(`/captcha/generate`);
-export const verifyCaptcha = (data: { captchaId: string; trackData: string }) => Network.post("/captcha/verify", data); 
+export const generateCaptcha = () => Network.post<{ id: string; question: string; expiresIn: number }>(`/captcha/generate`);
+export const verifyCaptcha = (data: { id: string; answer: string }) => Network.post<{ validToken: string }>("/captcha/verify", data);

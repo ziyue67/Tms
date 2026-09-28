@@ -265,6 +265,9 @@ func (a *API) adjustSubscription(w http.ResponseWriter, r *http.Request) {
 		writeResponse(w, Failure(err.Error()))
 		return
 	}
+	if err := a.provisionAutoTargetsForUser(r, userID); err != nil {
+		a.logger.Error("automatic protocol provisioning failed", "user_id", userID, "error", err)
+	}
 	writeResponse(w, OK(item))
 }
 
@@ -306,6 +309,9 @@ func (a *API) redeemSubscription(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeResponse(w, Failure(err.Error()))
 		return
+	}
+	if err := a.provisionAutoTargetsForUser(r, userID); err != nil {
+		a.logger.Error("automatic protocol provisioning failed", "user_id", userID, "error", err)
 	}
 	writeResponse(w, OK(item))
 }

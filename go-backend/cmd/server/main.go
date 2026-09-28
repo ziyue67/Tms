@@ -14,7 +14,9 @@ import (
 	"github.com/ziyue67/tms/go-backend/internal/config"
 	"github.com/ziyue67/tms/go-backend/internal/database"
 	"github.com/ziyue67/tms/go-backend/internal/httpapi"
+	"github.com/ziyue67/tms/go-backend/internal/maintenance"
 	"github.com/ziyue67/tms/go-backend/internal/nodehub"
+	"github.com/ziyue67/tms/go-backend/internal/payment"
 	"github.com/ziyue67/tms/go-backend/internal/store"
 	"github.com/ziyue67/tms/go-backend/internal/verification"
 )
@@ -41,6 +43,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	if err := database.Migrate(startupCtx, db, dialect); err != nil {
+		logger.Error("database migration failed", "error", err)
+		os.Exit(1)
+	}
 
 	redisClient, err := httpapi.NewRedis(startupCtx, cfg.Redis)
 	if err != nil {
@@ -54,6 +60,10 @@ func main() {
 	tokens := auth.NewTokenService(cfg.JWTSecret, 90*24*time.Hour)
 	verificationService := verification.New(cfg.Auth, redisClient, repository, nil)
 	nodeHub := nodehub.New(repository, tokens, logger)
+	paymentService := payment.New(repository)
+	scheduler := maintenance.New(repository, nodeHub, logger)
+	scheduler.Start(context.Background())
+	defer scheduler.Close()
 	handler := httpapi.New(httpapi.Dependencies{
 		Config:       cfg,
 		Store:        repository,
@@ -61,6 +71,7 @@ func main() {
 		Redis:        redisClient,
 		Verification: verificationService,
 		NodeHub:      nodeHub,
+		Payments:     paymentService,
 		Logger:       logger,
 		BuildCommit:  buildCommit,
 		BuildTime:    buildTime,

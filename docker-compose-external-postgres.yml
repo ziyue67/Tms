@@ -14,8 +14,8 @@ services:
       retries: 10
 
   backend:
-    image: ghcr.io/ziyue67/springboot-backend:latest
-    container_name: springboot-backend
+    image: ghcr.io/ziyue67/go-backend:latest
+    container_name: go-backend
     restart: unless-stopped
     environment:
       DB_DRIVER: org.postgresql.Driver
@@ -30,7 +30,6 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me-now}
       REDIS_URL: ${REDIS_URL:-}
       LOG_DIR: /app/logs
-      JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
     ports:
       - "${BACKEND_PORT:-6365}:6365"
     volumes:

@@ -1,36 +1,27 @@
 # Go backend migration
 
-The Go service is being migrated by API contract so the frontend, node agents,
-database, and deployment tooling can continue to use the same interfaces.
+The backend migration is complete. The Go service owns the existing API contract,
+node WebSocket protocol, database schema, subscriptions, payments, scheduled work,
+and production deployment.
 
-## Implemented
+Compatibility retained during the rewrite:
 
-- process lifecycle, structured logging, panic recovery, CORS, and graceful shutdown;
-- MySQL 5.7 and PostgreSQL connections through legacy `DB_*` and JDBC `DB_URL` settings;
-- Redis connection through `REDIS_*` or `REDIS_URL`;
-- `GET|HEAD /flow/test`, `GET /health/live`, and `GET /health/ready`;
-- the legacy `code`, `msg`, `ts`, `data` response envelope;
-- raw `Authorization` JWTs with the legacy `HmacSHA256` header value and 90-day expiry;
-- `POST /api/v1/user/login` and `POST /api/v1/auth/login`;
-- legacy MD5 and bcrypt password verification with automatic bcrypt upgrades;
-- `GET /api/v1/auth/config`;
-- public and administrator site configuration APIs under `/api/v1/config`;
-- administrator role enforcement from JWT `role_id`.
-- registration, password reset, Redis verification codes, SMTP delivery, rate limits, and administrator email diagnostics;
-- node CRUD, install command generation, node status transitions, live system info, and AES-GCM WebSocket command correlation;
-- user administration, account password changes, user deletion cleanup, traffic reset, and package dashboard queries;
-- subscription plans, user activation, redeem-code generation/consumption, quota audits, dashboard data, and admin lifecycle APIs.
-- authenticated node flow/config upload compatibility endpoints with AES payload decoding and atomic usage updates.
-- basic tunnel, forward, and speed-limit CRUD/query routes using the existing schema and response contract.
+- the `code`, `msg`, `ts`, `data` response envelope and existing API paths;
+- raw `Authorization` JWTs and the legacy `HmacSHA256` header value;
+- legacy MD5 password verification with automatic bcrypt upgrades;
+- existing `DB_*`, JDBC `DB_URL`, `REDIS_*`, and `REDIS_URL` settings;
+- MySQL 5.7 compatibility and PostgreSQL as the primary database target;
+- AES-encrypted node flow/config reports and GOST command names;
+- existing native and Clash/Mihomo subscription URLs.
 
-## Remaining migration order
+Production uses `ghcr.io/ziyue67/go-backend:latest` with container name
+`go-backend`. The module targets Go 1.25.
 
-1. Captcha image generation/track validation.
-2. Landing rules and inbound protocol CRUD/auto-provision orchestration.
-3. Payment providers, signed callbacks, flow ingestion, scheduled access maintenance, and schema migration startup.
-4. Subscription text/Clash output, version checks, and remaining OpenAPI endpoints.
-5. Full API contract comparison, production Compose switch, and removal of the Java source tree.
+Validation performed for the completed migration:
 
-The local hybrid Compose file runs the Go service as `go-backend`. Production
-image publishing remains on the existing backend until the compatibility suite
-passes, so an incomplete migration cannot replace the currently deployed image.
+- unit, API contract, race, and vet checks;
+- static Linux binary and Go 1.25 Docker image builds;
+- PostgreSQL 16 schema initialization and idempotent startup migration;
+- live PostgreSQL and Redis readiness checks;
+- frontend TypeScript and production Vite build;
+- all production Compose files and installer shell syntax.

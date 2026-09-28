@@ -111,6 +111,28 @@ func (s *fakeStore) QueryMaps(context.Context, string, ...any) ([]map[string]any
 func (s *fakeStore) InsertMap(context.Context, string, map[string]any) (int64, error) { return 1, nil }
 func (s *fakeStore) UpdateMap(context.Context, string, int64, map[string]any) error   { return nil }
 func (s *fakeStore) DeleteByID(context.Context, string, int64) error                  { return nil }
+func (s *fakeStore) CreatePaymentOrder(_ context.Context, value store.PaymentOrder) (store.PaymentOrder, error) {
+	return value, nil
+}
+func (s *fakeStore) PaymentOrderByNo(context.Context, string, *int64) (*store.PaymentOrder, error) {
+	return nil, nil
+}
+func (s *fakeStore) PaymentOrders(context.Context, *int64) ([]store.PaymentOrder, error) {
+	return []store.PaymentOrder{}, nil
+}
+func (s *fakeStore) FailPaymentOrder(context.Context, string, string) error { return nil }
+func (s *fakeStore) RetryPaymentOrder(context.Context, string) (*store.PaymentOrder, error) {
+	return nil, nil
+}
+func (s *fakeStore) CompletePaymentOrder(context.Context, string, string, string) (*store.PaymentOrder, error) {
+	return nil, nil
+}
+func (s *fakeStore) SubscriptionByToken(context.Context, string) (store.SubscriptionOutput, error) {
+	return store.SubscriptionOutput{}, nil
+}
+func (s *fakeStore) SubscriptionStoreHeader(context.Context, string, *int64) (store.User, *store.TunnelPermission, error) {
+	return store.User{}, nil, nil
+}
 func (s *fakeStore) SubscriptionPlans(context.Context, bool) ([]store.SubscriptionPlan, error) {
 	return []store.SubscriptionPlan{}, nil
 }
