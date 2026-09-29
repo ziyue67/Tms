@@ -92,8 +92,8 @@ func (s *Store) SubscriptionByToken(ctx context.Context, token string) (Subscrip
 		return output, err
 	}
 	output.Entries = entries
-	if output.Aggregate && (user.RoleID == 0 || subscription != nil) {
-		output.CustomLinks, output.CustomParsed, err = s.customSubscriptionEntries(ctx, user.ID)
+	if output.Aggregate {
+		output.CustomLinks, output.CustomParsed, err = s.customSubscriptionEntries(ctx, user.ID, user.RoleID == 0 || subscription != nil)
 	}
 	return output, err
 }
@@ -126,8 +126,12 @@ func (s *Store) subscriptionEntries(ctx context.Context, userID int64, token str
 	return result, rows.Err()
 }
 
-func (s *Store) customSubscriptionEntries(ctx context.Context, userID int64) ([]string, []map[string]any, error) {
-	query := "SELECT c." + s.quote("raw_link") + ", c." + s.quote("parsed_json") + ", c." + s.quote("name") + ", c." + s.quote("protocol") + " FROM " + s.quote("custom_node") + " c LEFT JOIN " + s.quote("user_custom_node") + " a ON a." + s.quote("custom_node_id") + "=c." + s.quote("id") + " AND a." + s.quote("user_id") + "=? AND a." + s.quote("status") + "=1 WHERE c." + s.quote("status") + "=1 AND (c." + s.quote("visibility") + " IS NULL OR c." + s.quote("visibility") + " IN ('global','subscribers') OR (c." + s.quote("visibility") + "='users' AND a." + s.quote("id") + " IS NOT NULL)) ORDER BY c." + s.quote("id")
+func (s *Store) customSubscriptionEntries(ctx context.Context, userID int64, includeSubscribers bool) ([]string, []map[string]any, error) {
+	visibility := "c." + s.quote("visibility") + "='global'"
+	if includeSubscribers {
+		visibility += " OR c." + s.quote("visibility") + "='subscribers'"
+	}
+	query := "SELECT c." + s.quote("raw_link") + ", c." + s.quote("parsed_json") + ", c." + s.quote("name") + ", c." + s.quote("protocol") + " FROM " + s.quote("custom_node") + " c LEFT JOIN " + s.quote("user_custom_node") + " a ON a." + s.quote("custom_node_id") + "=c." + s.quote("id") + " AND a." + s.quote("user_id") + "=? AND a." + s.quote("status") + "=1 WHERE c." + s.quote("status") + "=1 AND (c." + s.quote("visibility") + " IS NULL OR " + visibility + " OR (c." + s.quote("visibility") + "='users' AND a." + s.quote("id") + " IS NOT NULL)) ORDER BY c." + s.quote("id")
 	rows, err := s.db.QueryContext(ctx, s.bind(query), userID)
 	if err != nil {
 		return nil, nil, err

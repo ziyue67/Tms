@@ -32,6 +32,9 @@ func Migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	if err := m.ensureUserEmailIndex(ctx); err != nil {
 		return err
 	}
+	if err := m.ensureUserIdentitySequence(ctx); err != nil {
+		return err
+	}
 	if err := m.expandConfigValue(ctx); err != nil {
 		return err
 	}
@@ -125,6 +128,27 @@ func (m migrator) ensureUserEmailIndex(ctx context.Context) error {
 		return err
 	}
 	_, err = m.tx.ExecContext(ctx, "CREATE UNIQUE INDEX `uk_user_email` ON `user` (`email`)")
+	return err
+}
+
+func (m migrator) ensureUserIdentitySequence(ctx context.Context) error {
+	if m.dialect != PostgreSQL {
+		return nil
+	}
+	exists, err := m.tableExists(ctx, "user")
+	if err != nil || !exists {
+		return err
+	}
+	_, err = m.tx.ExecContext(ctx, `
+		SELECT setval(
+			pg_get_serial_sequence('"user"', 'id'),
+			GREATEST(
+				COALESCE(MAX("id"), 1),
+				COALESCE(pg_sequence_last_value(pg_get_serial_sequence('"user"', 'id')::regclass), 1)
+			),
+			MAX("id") IS NOT NULL
+		)
+		FROM "user"`)
 	return err
 }
 

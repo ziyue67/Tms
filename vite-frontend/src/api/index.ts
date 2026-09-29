@@ -55,6 +55,8 @@ export const unassignCustomNode = (nodeId: string | number, userId: number) => N
 export const deleteCustomNode = (nodeId: string | number) => Network.delete(`/custom-nodes/${nodeId}`);
 export const disableCustomNode = (nodeId: string | number) => Network.post(`/custom-nodes/${nodeId}/disable`);
 export const enableCustomNode = (nodeId: string | number) => Network.post(`/custom-nodes/${nodeId}/enable`);
+export const updateCustomNodesStatus = (ids: Array<string | number>, status: 0 | 1) => Network.post("/custom-nodes/batch/status", { ids: ids.map(String), status });
+export const deleteCustomNodes = (ids: Array<string | number>) => Network.post("/custom-nodes/batch/delete", { ids: ids.map(String) });
 export const getAuthConfig = () => Network.get("/auth/config");
 export const testAdminEmail = (email: string) => Network.post("/admin/email/test", { email });
 export const getAdminEmailHealth = () => Network.get("/admin/email/health");
