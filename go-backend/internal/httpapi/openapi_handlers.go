@@ -141,7 +141,18 @@ func clientLink(entry store.SubscriptionEntry, remark string) string {
 	case "trojan":
 		return "trojan://" + url.QueryEscape(entry.Password) + "@" + address + "?security=reality&sni=" + url.QueryEscape(entry.SNI) + "&fp=chrome&pbk=" + url.QueryEscape(entry.PublicKey) + "&sid=" + url.QueryEscape(entry.ShortID) + "&type=tcp#" + fragment
 	case "hysteria2":
-		return "hysteria2://" + url.QueryEscape(entry.Password) + "@" + address + "?sni=" + url.QueryEscape(entry.SNI) + "&insecure=1#" + fragment
+		var hysteriaConfig map[string]any
+		_ = json.Unmarshal([]byte(entry.ConfigJSON), &hysteriaConfig)
+		query := "?sni=" + url.QueryEscape(entry.SNI) + "&insecure=1"
+		if obfs := strings.ToLower(mapString(hysteriaConfig, "obfs")); obfs != "" && obfs != "none" {
+			if secret := firstString(mapString(hysteriaConfig, "obfs-password"), mapString(hysteriaConfig, "obfs_password")); secret != "" {
+				query += "&obfs=" + url.QueryEscape(obfs) + "&obfs-password=" + url.QueryEscape(secret)
+			}
+		}
+		if alpn := splitALPN(firstString(mapString(hysteriaConfig, "alpn"), mapString(hysteriaConfig, "alpns"))); len(alpn) > 0 {
+			query += "&alpn=" + url.QueryEscape(strings.Join(alpn, ","))
+		}
+		return "hysteria2://" + url.QueryEscape(entry.Password) + "@" + address + query + "#" + fragment
 	case "tuic":
 		return "tuic://" + url.QueryEscape(entry.UUID) + ":" + url.QueryEscape(entry.Password) + "@" + address + "?congestion_control=bbr&alpn=h3&sni=" + url.QueryEscape(entry.SNI) + "&allow_insecure=1#" + fragment
 	case "anytls":
@@ -177,6 +188,9 @@ func buildClashProxies(output store.SubscriptionOutput) []map[string]any {
 			proxy["type"], proxy["cipher"], proxy["password"] = "ss", config["method"], config["password"]
 		case "hysteria2":
 			proxy["type"], proxy["password"], proxy["sni"], proxy["skip-cert-verify"] = "hysteria2", entry.Password, entry.SNI, true
+			var config map[string]any
+			_ = json.Unmarshal([]byte(entry.ConfigJSON), &config)
+			addCustomHysteria2Options(proxy, config)
 		case "tuic":
 			proxy["type"], proxy["uuid"], proxy["password"], proxy["sni"], proxy["alpn"], proxy["congestion-controller"], proxy["udp-relay-mode"], proxy["skip-cert-verify"] = "tuic", entry.UUID, entry.Password, entry.SNI, []string{"h3"}, "bbr", "native", true
 		default:
@@ -217,6 +231,11 @@ func customClashProxy(value map[string]any, used map[string]int) (map[string]any
 			proxy["client-fingerprint"] = firstString(mapString(value, "fp"), "chrome")
 			proxy["reality-opts"] = map[string]any{"public-key": mapString(value, "pbk"), "short-id": mapString(value, "sid")}
 		}
+		// A server provisioned with `flow=xtls-rprx-vision` rejects clients that
+		// do not ask for the same flow, so it has to survive the conversion.
+		if flow := mapString(value, "flow"); flow != "" && flow != "none" {
+			proxy["flow"] = flow
+		}
 		addCustomClashTransport(proxy, value)
 	case "trojan":
 		proxy["type"], proxy["password"], proxy["sni"] = "trojan", mapString(value, "password"), sni
@@ -236,6 +255,7 @@ func customClashProxy(value map[string]any, used map[string]int) (map[string]any
 		proxy["type"], proxy["cipher"], proxy["password"] = "ss", mapString(value, "method"), mapString(value, "password")
 	case "hysteria2":
 		proxy["type"], proxy["password"], proxy["sni"], proxy["skip-cert-verify"] = "hysteria2", mapString(value, "password"), sni, true
+		addCustomHysteria2Options(proxy, value)
 	case "tuic":
 		proxy["type"], proxy["uuid"], proxy["password"], proxy["sni"] = "tuic", mapString(value, "uuid"), mapString(value, "password"), sni
 		proxy["alpn"], proxy["congestion-controller"], proxy["udp-relay-mode"], proxy["skip-cert-verify"] = []string{"h3"}, firstString(mapString(value, "congestion_control"), "bbr"), "native", true
@@ -260,6 +280,57 @@ func addCustomClashTransport(proxy, value map[string]any) {
 	case "grpc":
 		proxy["grpc-opts"] = map[string]any{"grpc-service-name": path}
 	}
+}
+
+// addCustomHysteria2Options copies the Hysteria2 transport options that a
+// share link may carry. Mihomo rejects a node whose `obfs` is set without a
+// matching `obfs-password` (and vice versa), so the two are only emitted
+// together; a node that asks for salamander obfuscation but loses the secret
+// on the way out shows up as a red/failed node in every Clash client.
+func addCustomHysteria2Options(proxy, value map[string]any) {
+	obfs := strings.ToLower(mapString(value, "obfs"))
+	obfsPassword := firstString(mapString(value, "obfs-password"), mapString(value, "obfs_password"))
+	switch obfs {
+	case "", "none":
+		// No obfuscation requested: omit both keys.
+	case "salamander":
+		if obfsPassword != "" {
+			proxy["obfs"] = obfs
+			proxy["obfs-password"] = obfsPassword
+		}
+	default:
+		// Unknown schemes are forwarded only when complete, so a malformed
+		// link degrades to a plain node instead of an unusable one.
+		if obfsPassword != "" {
+			proxy["obfs"] = obfs
+			proxy["obfs-password"] = obfsPassword
+		}
+	}
+	if alpn := splitALPN(firstString(mapString(value, "alpn"), mapString(value, "alpns"))); len(alpn) > 0 {
+		proxy["alpn"] = alpn
+	}
+}
+
+// splitALPN accepts the comma/space separated form used by Hysteria2 share
+// links (`alpn=h3`, `alpn=h3,h2`) and returns a de-duplicated list.
+func splitALPN(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	result := []string{}
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' }) {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func mapString(value map[string]any, key string) string {
