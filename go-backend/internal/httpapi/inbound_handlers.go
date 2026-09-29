@@ -886,7 +886,7 @@ func (a *API) pushSingbox(r *http.Request, nodeID int64) error {
 	if err != nil {
 		return err
 	}
-	config := map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{}, "outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}}, "route": map[string]any{"rules": []any{}, "final": "direct"}}
+	config := map[string]any{"log": map[string]any{"level": "warn"}, "inbounds": []any{}, "outbounds": []any{map[string]any{"type": "direct", "tag": "direct", "domain_resolver": singboxResolverTag}}, "route": map[string]any{"rules": []any{}, "final": "direct"}, "dns": singboxDNS()}
 	inboundConfigs := []any{}
 	outbounds := config["outbounds"].([]any)
 	rules := []any{}
@@ -912,13 +912,39 @@ func (a *API) pushSingbox(r *http.Request, nodeID int64) error {
 		}
 	}
 	config["inbounds"], config["outbounds"] = inboundConfigs, outbounds
-	config["route"] = map[string]any{"rules": rules, "final": "direct"}
+	config["route"] = map[string]any{"rules": rules, "final": "direct", "default_domain_resolver": map[string]any{"server": singboxResolverTag}}
 	result := a.nodeHub.SendCommand(r.Context(), nodeID, "SetSingboxConfig", map[string]any{"config": config})
 	if result.Msg != "OK" {
 		return fmt.Errorf("下发 sing-box 配置失败:%s", result.Msg)
 	}
 	return nil
 }
+
+const singboxResolverTag = "tms-ipv4"
+
+// singboxDNS pins the node's resolver to IPv4.
+//
+// REALITY inbounds dial their handshake target (www.apple.com, www.bing.com, …)
+// to borrow a real certificate. Most nodes have no public IPv6 egress, but their
+// system resolver — frequently Tailscale MagicDNS, which advertises AAAA first —
+// happily returns IPv6 addresses. The dial then fails and sing-box answers the
+// client with "REALITY: processed invalid connection", so every node on that box
+// looks dead even though the ports are open and the listener is healthy.
+//
+// Resolving A records only keeps that handshake on the path that actually works.
+// The server form below matches sing-box >= 1.12; the older
+// `{"address": "8.8.8.8"}` list shape is rejected outright by 1.12+.
+func singboxDNS() map[string]any {
+	return map[string]any{
+		"servers": []any{
+			map[string]any{"type": "udp", "tag": singboxResolverTag, "server": "8.8.8.8", "detour": "direct"},
+			map[string]any{"type": "udp", "tag": "tms-dns-backup", "server": "1.1.1.1", "detour": "direct"},
+		},
+		"final":    singboxResolverTag,
+		"strategy": "ipv4_only",
+	}
+}
+
 func buildSingboxInbound(in map[string]any, users []map[string]any) map[string]any {
 	protocol := toString(in["protocol"])
 	value := map[string]any{"type": protocol, "tag": in["tag"], "listen": "127.0.0.1", "listen_port": in["listenPort"]}
