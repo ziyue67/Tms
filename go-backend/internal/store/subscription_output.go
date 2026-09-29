@@ -127,7 +127,7 @@ func (s *Store) subscriptionEntries(ctx context.Context, userID int64, token str
 }
 
 func (s *Store) customSubscriptionEntries(ctx context.Context, userID int64) ([]string, []map[string]any, error) {
-	query := "SELECT DISTINCT c." + s.quote("raw_link") + ", c." + s.quote("parsed_json") + ", c." + s.quote("name") + ", c." + s.quote("protocol") + " FROM " + s.quote("custom_node") + " c LEFT JOIN " + s.quote("user_custom_node") + " a ON a." + s.quote("custom_node_id") + "=c." + s.quote("id") + " AND a." + s.quote("user_id") + "=? AND a." + s.quote("status") + "=1 WHERE c." + s.quote("status") + "=1 AND (c." + s.quote("visibility") + " IS NULL OR c." + s.quote("visibility") + " IN ('global','subscribers') OR (c." + s.quote("visibility") + "='users' AND a." + s.quote("id") + " IS NOT NULL)) ORDER BY c." + s.quote("id")
+	query := "SELECT c." + s.quote("raw_link") + ", c." + s.quote("parsed_json") + ", c." + s.quote("name") + ", c." + s.quote("protocol") + " FROM " + s.quote("custom_node") + " c LEFT JOIN " + s.quote("user_custom_node") + " a ON a." + s.quote("custom_node_id") + "=c." + s.quote("id") + " AND a." + s.quote("user_id") + "=? AND a." + s.quote("status") + "=1 WHERE c." + s.quote("status") + "=1 AND (c." + s.quote("visibility") + " IS NULL OR c." + s.quote("visibility") + " IN ('global','subscribers') OR (c." + s.quote("visibility") + "='users' AND a." + s.quote("id") + " IS NOT NULL)) ORDER BY c." + s.quote("id")
 	rows, err := s.db.QueryContext(ctx, s.bind(query), userID)
 	if err != nil {
 		return nil, nil, err
