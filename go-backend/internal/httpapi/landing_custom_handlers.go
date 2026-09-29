@@ -158,22 +158,27 @@ func (a *API) importCustomNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	links := []string{}
-	if values, ok := body["links"].([]any); ok {
-		for _, value := range values {
-			if link := toString(value); link != "" {
+	appendLinks := func(value string) {
+		for _, line := range strings.Split(strings.ReplaceAll(value, "\r", ""), "\n") {
+			if link := strings.TrimSpace(line); link != "" {
 				links = append(links, link)
 			}
 		}
 	}
-	if len(links) == 0 {
-		for _, line := range strings.Split(strings.ReplaceAll(toString(body["link"]), "\r", ""), "\n") {
-			if strings.TrimSpace(line) != "" {
-				links = append(links, strings.TrimSpace(line))
-			}
+	if values, ok := body["links"].([]any); ok {
+		for _, value := range values {
+			appendLinks(toString(value))
 		}
 	}
 	if len(links) == 0 {
+		appendLinks(toString(body["link"]))
+	}
+	if len(links) == 0 {
 		writeResponse(w, Failure("请输入协议分享链接"))
+		return
+	}
+	if len(links) > 1000 {
+		writeResponse(w, Failure("每次最多导入 1000 个节点"))
 		return
 	}
 	visibility := strings.ToLower(defaultStringValue(body["visibility"], "global"))
@@ -181,10 +186,14 @@ func (a *API) importCustomNodes(w http.ResponseWriter, r *http.Request) {
 		visibility = "global"
 	}
 	userIDs := []int64{}
+	seenUsers := map[int64]struct{}{}
 	if values, ok := body["userIds"].([]any); ok {
 		for _, value := range values {
 			if id, err := requestInt64(value); err == nil {
-				userIDs = append(userIDs, id)
+				if _, exists := seenUsers[id]; !exists {
+					seenUsers[id] = struct{}{}
+					userIDs = append(userIDs, id)
+				}
 			}
 		}
 	}
@@ -213,13 +222,30 @@ func (a *API) importCustomNodes(w http.ResponseWriter, r *http.Request) {
 			failures = append(failures, map[string]string{"link": link, "error": err.Error()})
 			continue
 		}
+		assignmentFailed := false
 		for _, userID := range userIDs {
-			_, _ = a.store.InsertMap(r.Context(), "user_custom_node", map[string]any{"user_id": userID, "custom_node_id": id, "status": 1, "created_time": now})
+			if _, err := a.store.InsertMap(r.Context(), "user_custom_node", map[string]any{"user_id": userID, "custom_node_id": id, "status": 1, "created_time": now}); err != nil {
+				assignmentFailed = true
+				failures = append(failures, map[string]string{"link": link, "error": "保存用户分配失败: " + err.Error()})
+				break
+			}
+		}
+		if assignmentFailed {
+			_ = a.deleteCustomNodeByID(r, id)
+			continue
 		}
 		imported = append(imported, map[string]any{"id": fmt.Sprint(id), "name": name, "protocol": parsed.Protocol, "visibility": visibility, "status": 1, "createdTime": now})
 	}
 	if len(links) == 1 && len(imported) == 1 {
 		writeResponse(w, OK(imported[0]))
+		return
+	}
+	if len(imported) == 0 {
+		message := "导入失败"
+		if len(failures) > 0 && failures[0]["error"] != "" {
+			message += ": " + failures[0]["error"]
+		}
+		writeResponse(w, Failure(message))
 		return
 	}
 	writeResponse(w, OK(map[string]any{"imported": imported, "successCount": len(imported), "failureCount": len(failures), "errors": failures}))
@@ -303,11 +329,103 @@ func (a *API) deleteCustomNode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	assignments, _ := a.store.QueryMaps(r.Context(), "SELECT id FROM user_custom_node WHERE custom_node_id=?", id)
+	if err := a.deleteCustomNodeByID(r, id); err != nil {
+		writeResponse(w, Failure("删除失败: "+err.Error()))
+		return
+	}
+	writeResponse(w, OK(nil))
+}
+
+func (a *API) deleteCustomNodeByID(r *http.Request, id int64) error {
+	assignments, err := a.store.QueryMaps(r.Context(), "SELECT id FROM user_custom_node WHERE custom_node_id=?", id)
+	if err != nil {
+		return err
+	}
 	for _, row := range assignments {
 		assignmentID, _ := requestInt64(row["id"])
-		_ = a.store.DeleteByID(r.Context(), "user_custom_node", assignmentID)
+		if err := a.store.DeleteByID(r.Context(), "user_custom_node", assignmentID); err != nil {
+			return err
+		}
 	}
-	_ = a.store.DeleteByID(r.Context(), "custom_node", id)
-	writeResponse(w, OK(nil))
+	return a.store.DeleteByID(r.Context(), "custom_node", id)
+}
+
+func customNodeIDs(body map[string]any) ([]int64, error) {
+	values, ok := body["ids"].([]any)
+	if !ok || len(values) == 0 {
+		return nil, fmt.Errorf("请先选择节点")
+	}
+	if len(values) > 1000 {
+		return nil, fmt.Errorf("每次最多操作 1000 个节点")
+	}
+	ids := make([]int64, 0, len(values))
+	seen := map[int64]struct{}{}
+	for _, value := range values {
+		id, err := requestInt64(value)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("节点参数错误")
+		}
+		if _, exists := seen[id]; !exists {
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+func (a *API) setCustomNodeStatusBatch(w http.ResponseWriter, r *http.Request) {
+	var body map[string]any
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	ids, err := customNodeIDs(body)
+	if err != nil {
+		writeResponse(w, Failure(err.Error()))
+		return
+	}
+	status, err := requestInt64(body["status"])
+	if err != nil || (status != 0 && status != 1) {
+		writeResponse(w, Failure("状态参数错误"))
+		return
+	}
+	updated := 0
+	failures := make([]map[string]string, 0)
+	for _, id := range ids {
+		if err := a.store.UpdateMap(r.Context(), "custom_node", id, map[string]any{"status": status, "updated_time": time.Now().UnixMilli()}); err != nil {
+			failures = append(failures, map[string]string{"id": fmt.Sprint(id), "error": err.Error()})
+			continue
+		}
+		updated++
+	}
+	if updated == 0 {
+		writeResponse(w, Failure("没有节点被更新"))
+		return
+	}
+	writeResponse(w, OK(map[string]any{"updated": updated, "failureCount": len(failures), "errors": failures}))
+}
+
+func (a *API) deleteCustomNodesBatch(w http.ResponseWriter, r *http.Request) {
+	var body map[string]any
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	ids, err := customNodeIDs(body)
+	if err != nil {
+		writeResponse(w, Failure(err.Error()))
+		return
+	}
+	deleted := 0
+	failures := make([]map[string]string, 0)
+	for _, id := range ids {
+		if err := a.deleteCustomNodeByID(r, id); err != nil {
+			failures = append(failures, map[string]string{"id": fmt.Sprint(id), "error": err.Error()})
+			continue
+		}
+		deleted++
+	}
+	if deleted == 0 {
+		writeResponse(w, Failure("没有节点被删除"))
+		return
+	}
+	writeResponse(w, OK(map[string]any{"deleted": deleted, "failureCount": len(failures), "errors": failures}))
 }

@@ -184,7 +184,103 @@ func buildClashProxies(output store.SubscriptionOutput) []map[string]any {
 		}
 		result = append(result, proxy)
 	}
+	for _, custom := range output.CustomParsed {
+		proxy, ok := customClashProxy(custom, used)
+		if ok {
+			result = append(result, proxy)
+		}
+	}
 	return result
+}
+
+func customClashProxy(value map[string]any, used map[string]int) (map[string]any, bool) {
+	protocol := strings.ToLower(mapString(value, "protocol"))
+	server := mapString(value, "server")
+	port := mapInt(value, "port")
+	if server == "" || port < 1 || port > 65535 {
+		return nil, false
+	}
+	name := mapString(value, "name")
+	if name == "" {
+		name = protocolName(protocol)
+	}
+	proxy := map[string]any{"name": uniqueName(name, used), "server": server, "port": port, "udp": true}
+	sni := firstString(mapString(value, "sni"), mapString(value, "peer"), server)
+	switch protocol {
+	case "vless":
+		proxy["type"], proxy["uuid"], proxy["network"] = "vless", mapString(value, "uuid"), firstString(mapString(value, "type"), mapString(value, "net"), "tcp")
+		security := strings.ToLower(firstString(mapString(value, "security"), mapString(value, "tls")))
+		if security != "" && security != "none" {
+			proxy["tls"], proxy["servername"] = true, sni
+		}
+		if security == "reality" {
+			proxy["client-fingerprint"] = firstString(mapString(value, "fp"), "chrome")
+			proxy["reality-opts"] = map[string]any{"public-key": mapString(value, "pbk"), "short-id": mapString(value, "sid")}
+		}
+		addCustomClashTransport(proxy, value)
+	case "trojan":
+		proxy["type"], proxy["password"], proxy["sni"] = "trojan", mapString(value, "password"), sni
+		if strings.EqualFold(mapString(value, "security"), "reality") {
+			proxy["client-fingerprint"] = firstString(mapString(value, "fp"), "chrome")
+			proxy["reality-opts"] = map[string]any{"public-key": mapString(value, "pbk"), "short-id": mapString(value, "sid")}
+		}
+		addCustomClashTransport(proxy, value)
+	case "vmess":
+		proxy["type"], proxy["uuid"], proxy["alterId"], proxy["cipher"] = "vmess", mapString(value, "uuid"), mapInt(value, "aid"), firstString(mapString(value, "scy"), "auto")
+		proxy["network"] = firstString(mapString(value, "net"), mapString(value, "type"), "tcp")
+		if tls := strings.ToLower(mapString(value, "tls")); tls != "" && tls != "none" {
+			proxy["tls"], proxy["servername"] = true, sni
+		}
+		addCustomClashTransport(proxy, value)
+	case "shadowsocks":
+		proxy["type"], proxy["cipher"], proxy["password"] = "ss", mapString(value, "method"), mapString(value, "password")
+	case "hysteria2":
+		proxy["type"], proxy["password"], proxy["sni"], proxy["skip-cert-verify"] = "hysteria2", mapString(value, "password"), sni, true
+	case "tuic":
+		proxy["type"], proxy["uuid"], proxy["password"], proxy["sni"] = "tuic", mapString(value, "uuid"), mapString(value, "password"), sni
+		proxy["alpn"], proxy["congestion-controller"], proxy["udp-relay-mode"], proxy["skip-cert-verify"] = []string{"h3"}, firstString(mapString(value, "congestion_control"), "bbr"), "native", true
+	case "anytls":
+		proxy["type"], proxy["password"], proxy["sni"], proxy["skip-cert-verify"] = "anytls", mapString(value, "password"), sni, true
+	default:
+		return nil, false
+	}
+	return proxy, true
+}
+
+func addCustomClashTransport(proxy, value map[string]any) {
+	network := strings.ToLower(firstString(mapString(value, "type"), mapString(value, "net")))
+	path := firstString(mapString(value, "path"), mapString(value, "serviceName"))
+	switch network {
+	case "ws":
+		options := map[string]any{"path": path}
+		if host := mapString(value, "host"); host != "" {
+			options["headers"] = map[string]string{"Host": host}
+		}
+		proxy["ws-opts"] = options
+	case "grpc":
+		proxy["grpc-opts"] = map[string]any{"grpc-service-name": path}
+	}
+}
+
+func mapString(value map[string]any, key string) string {
+	if value[key] == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value[key]))
+}
+
+func mapInt(value map[string]any, key string) int {
+	number, _ := strconv.Atoi(mapString(value, key))
+	return number
+}
+
+func firstString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func prepareSubscriptionHeaders(w http.ResponseWriter, output store.SubscriptionOutput) {

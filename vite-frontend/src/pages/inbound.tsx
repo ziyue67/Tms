@@ -29,6 +29,8 @@ import {
   deleteCustomNode,
   disableCustomNode,
   enableCustomNode,
+  updateCustomNodesStatus,
+  deleteCustomNodes,
 } from "@/api";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { SNI_PRESETS, DEFAULT_SNI, cleanSni } from "@/config/sni";
@@ -116,7 +118,7 @@ export default function InboundPage() {
         setUsers(Array.isArray(d) ? d : (d && d.records ? d.records : []));
       }
       if (sp.code === 0) setSpeedRules(sp.data || []);
-      if (cn.code === 0) setCustomNodes(cn.data || []);
+      if (cn.code === 0) setCustomNodes((cn.data || []).map((node: any) => ({ ...node, status: Number(node.status) })));
       if (at.code === 0) setAutoTargets(at.data || []);
     } catch (e) {
       toast.error("加载失败");
@@ -352,11 +354,11 @@ export default function InboundPage() {
     if (!selected.length) return toast.error("请先选择节点");
     setCustomBulkLoading(true);
     try {
-      const responses = await Promise.all(selected.map((node) => status === 1 ? enableCustomNode(node.id) : disableCustomNode(node.id)));
-      const failures = responses.filter((response) => response.code !== 0 && !isMissingCustomNode(response));
-      setCustomNodes((current) => current.map((node) => selectedCustomNodeIds.has(String(node.id)) ? { ...node, status } : node));
+      const response = await updateCustomNodesStatus(selected.map((node) => String(node.id)), status);
+      if (response.code !== 0) return toast.error(response.msg || (status === 1 ? "批量启用失败" : "批量停用失败"));
+      const failures = Number(response.data?.failureCount || 0);
       setSelectedCustomNodeIds(new Set());
-      if (failures.length) toast.error(`${selected.length - failures.length} 个已处理，${failures.length} 个失败`);
+      if (failures) toast.error(`${response.data?.updated || 0} 个已处理，${failures} 个失败`);
       else toast.success(status === 1 ? `已批量启用 ${selected.length} 个节点` : `已批量停用 ${selected.length} 个节点`);
       await loadAll();
     } catch (error) {
@@ -372,11 +374,11 @@ export default function InboundPage() {
     if (!window.confirm(`永久删除选中的 ${selected.length} 个自定义节点？此操作不可恢复`)) return;
     setCustomBulkLoading(true);
     try {
-      const responses = await Promise.all(selected.map((node) => deleteCustomNode(node.id)));
-      const failures = responses.filter((response) => response.code !== 0 && !isMissingCustomNode(response));
-      setCustomNodes((current) => current.filter((node) => !selectedCustomNodeIds.has(String(node.id))));
+      const response = await deleteCustomNodes(selected.map((node) => String(node.id)));
+      if (response.code !== 0) return toast.error(response.msg || "批量删除失败");
+      const failures = Number(response.data?.failureCount || 0);
       setSelectedCustomNodeIds(new Set());
-      if (failures.length) toast.error(`${selected.length - failures.length} 个已删除，${failures.length} 个失败`);
+      if (failures) toast.error(`${response.data?.deleted || 0} 个已删除，${failures} 个失败`);
       else toast.success(`已删除 ${selected.length} 个节点`);
       await loadAll();
     } catch (error) {

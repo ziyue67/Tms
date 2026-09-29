@@ -245,6 +245,8 @@ func New(dependencies Dependencies) http.Handler {
 				admin.Post("/landing/test", api.testLanding)
 				admin.Get("/custom-nodes", api.listCustomNodes)
 				admin.Post("/custom-nodes", api.importCustomNodes)
+				admin.Post("/custom-nodes/batch/status", api.setCustomNodeStatusBatch)
+				admin.Post("/custom-nodes/batch/delete", api.deleteCustomNodesBatch)
 				admin.Post("/custom-nodes/{nodeId}/assign", api.assignCustomNode)
 				admin.Delete("/custom-nodes/{nodeId}/assign/{userId}", api.unassignCustomNode)
 				admin.Post("/custom-nodes/{nodeId}/disable", api.disableCustomNode)
