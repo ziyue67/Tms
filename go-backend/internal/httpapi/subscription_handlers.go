@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -449,8 +451,36 @@ func optionalQueryInt64(r *http.Request, name string) (*int64, bool) {
 
 func requestInt64(value any) (int64, error) {
 	switch typed := value.(type) {
+	case int:
+		return int64(typed), nil
+	case int8:
+		return int64(typed), nil
+	case int16:
+		return int64(typed), nil
+	case int32:
+		return int64(typed), nil
+	case int64:
+		return typed, nil
+	case uint:
+		if uint64(typed) > math.MaxInt64 {
+			return 0, fmt.Errorf("number out of range")
+		}
+		return int64(typed), nil
+	case uint8:
+		return int64(typed), nil
+	case uint16:
+		return int64(typed), nil
+	case uint32:
+		return int64(typed), nil
+	case uint64:
+		if typed > math.MaxInt64 {
+			return 0, fmt.Errorf("number out of range")
+		}
+		return int64(typed), nil
 	case float64:
 		return int64(typed), nil
+	case json.Number:
+		return typed.Int64()
 	case string:
 		return strconv.ParseInt(typed, 10, 64)
 	default:
