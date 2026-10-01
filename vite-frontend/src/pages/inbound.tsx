@@ -393,9 +393,9 @@ export default function InboundPage() {
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center gap-3 flex-wrap">
         <h1 className="text-xl font-bold">协议管理</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button
             color="secondary"
             onPress={() => {

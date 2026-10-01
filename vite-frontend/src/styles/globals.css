@@ -5,9 +5,10 @@
    之前 html/body 同时设置 height:100% + overflow-x:hidden，会把 body 变成一个
    独立的滚动容器，再叠加 overscroll-behavior:none 后，iOS Safari 和华为等
    Chromium 内核浏览器上手指上下/左右滑动都无法滚动页面。
-   横向溢出改用 #root 上的 overflow-x:clip（不会产生滚动容器）。 */
+   横向溢出改用 #root 上的 overflow-x:clip（不会产生滚动容器）。
+   高度不在这里管：html/body 已经没有 height，写 min-height:100% 只会退化成 auto，
+   反而盖掉 index.html 里 #root 的 100vh / 100dvh / -webkit-fill-available。 */
 #root {
-  min-height: 100%;
   overflow-x: hidden; /* iOS 15 及更早不支持 clip 时的回退 */
   overflow-x: clip;
 }
