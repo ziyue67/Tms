@@ -536,14 +536,14 @@ export default function ConfigPage() {
 
         <Card className="shadow-md">
           <CardHeader className="pb-4">
-            <div className="flex justify-between items-center w-full">
+            <div className="flex justify-between items-center w-full gap-3 flex-wrap">
               <div>
                 <h2 className="text-xl font-semibold">{activeSectionInfo.label}</h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   {activeSectionInfo.description}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button variant="flat" onPress={handleRedisHealth}>检查 Redis</Button>
                 <Button variant="flat" onPress={handleSmtpTest}>测试 SMTP</Button>
                 <Button

@@ -437,7 +437,8 @@ export default function AdminLayout({
       </aside>
 
       {/* 主内容区域 */}
-      <div className={`flex flex-col flex-1 ${isMobile ? 'min-h-0' : 'h-full overflow-hidden'}`}>
+      {/* min-w-0：允许 flex 子项收缩到屏幕宽度，宽表格在自身 overflow-x-auto 容器内横向滑动，而不是把整页撑宽 */}
+      <div className={`flex flex-col flex-1 min-w-0 ${isMobile ? 'min-h-0' : 'h-full overflow-hidden'}`}>
                  {/* 顶部导航栏 */}
          <header className="tms-header bg-white/60 dark:bg-black/30 backdrop-blur-xl shadow-md border-b border-gray-200 dark:border-gray-600 h-14 flex items-center justify-between px-4 lg:px-6 relative z-10">
           <div className="flex items-center gap-4">

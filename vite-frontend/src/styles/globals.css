@@ -1,14 +1,16 @@
 @import "tailwindcss";
 
 
-/* 移动端视口高度优化 */
-html, body {
-  height: 100%;
-  overflow-x: hidden;
-}
-
+/* 让视口成为唯一的页面滚动容器。
+   之前 html/body 同时设置 height:100% + overflow-x:hidden，会把 body 变成一个
+   独立的滚动容器，再叠加 overscroll-behavior:none 后，iOS Safari 和华为等
+   Chromium 内核浏览器上手指上下/左右滑动都无法滚动页面。
+   横向溢出改用 #root 上的 overflow-x:clip（不会产生滚动容器）。
+   高度不在这里管：html/body 已经没有 height，写 min-height:100% 只会退化成 auto，
+   反而盖掉 index.html 里 #root 的 100vh / 100dvh / -webkit-fill-available。 */
 #root {
-  min-height: 100%;
+  overflow-x: hidden; /* iOS 15 及更早不支持 clip 时的回退 */
+  overflow-x: clip;
 }
 
 /* 现代浏览器使用 100dvh，避免地址栏收起/展开导致的布局跳动 */
@@ -34,14 +36,6 @@ html, body {
 
 /* 移动端滚动优化 */
 @media (max-width: 768px) {
-  * {
-    -webkit-overflow-scrolling: touch;
-  }
-  
-  body {
-    overscroll-behavior-y: none;
-  }
-
   /* The desktop information structure remains intact on phones. Only the
      navigation becomes a drawer and the content area gets mobile-safe space. */
   .tms-app-shell {
@@ -61,10 +55,9 @@ html, body {
     padding-top: var(--safe-area-top);
   }
 
+  /* 手机上由页面本身纵向滚动，main 不再做嵌套滚动容器 */
   .tms-main {
     min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
     padding-bottom: calc(var(--safe-area-bottom) + 1rem);
   }
 
