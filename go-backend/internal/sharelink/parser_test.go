@@ -29,3 +29,26 @@ func TestParseSupportedLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestURLParametersCannotReplaceEndpoint(test *testing.T) {
+	parsed, err := Parse("vless://uuid@example.com:443?server=other.example&port=1#node")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if parsed.Values["server"] != "example.com" || parsed.Values["port"] != 443 {
+		test.Fatalf("query parameters replaced the endpoint: %#v", parsed.Values)
+	}
+}
+
+func TestFragmentIsDecodedExactlyOnce(test *testing.T) {
+	credential := base64.RawURLEncoding.EncodeToString([]byte("aes-256-gcm:secret"))
+	for _, raw := range []string{"vless://uuid@example.com:443#C%2B%2B%20100%25", "ss://" + credential + "@example.com:443#C++%20100%25"} {
+		parsed, err := Parse(raw)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if parsed.Name != "C++ 100%" {
+			test.Fatalf("fragment decoded incorrectly: %q", parsed.Name)
+		}
+	}
+}

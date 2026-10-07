@@ -1,5 +1,6 @@
 import axios, { AxiosResponse } from 'axios';
 import { getPanelAddresses, isWebViewFunc} from '@/utils/panel';
+import { createSubscriptionUrl, type SubscriptionFormat } from '@/utils/subscription';
 
 
 interface PanelAddress {
@@ -9,12 +10,9 @@ interface PanelAddress {
 }
 
 const setPanelAddressesFunc = (newAddress: PanelAddress[]) => {
-  newAddress.forEach(item => {
-    if (item.inx) {
-      baseURL = `${item.address}/api/v1/`;
-      axios.defaults.baseURL = baseURL;
-    }
-  });
+  const currentAddress = newAddress.find(item => item.inx);
+  baseURL = currentAddress ? `${currentAddress.address.replace(/\/+$/, '')}/api/v1/` : '';
+  axios.defaults.baseURL = baseURL;
 }
 
 function getWebViewPanelAddress() {
@@ -26,14 +24,20 @@ let baseURL: string = '';
 
 export const reinitializeBaseURL = () => {
   if (isWebViewFunc()) {
+    baseURL = '';
+    axios.defaults.baseURL = baseURL;
     getWebViewPanelAddress();
   } else {
-    baseURL = import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1/` : '/api/v1/';
+    baseURL = import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE.replace(/\/+$/, '')}/api/v1/` : '/api/v1/';
     axios.defaults.baseURL = baseURL;
   }
 };
 
 reinitializeBaseURL();
+
+export function getSubscriptionUrl(format: SubscriptionFormat, token: string): string {
+  return createSubscriptionUrl(axios.defaults.baseURL || '/api/v1/', window.location.href, format, token);
+}
 
 
 interface ApiResponse<T = any> {

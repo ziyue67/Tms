@@ -29,6 +29,7 @@ import {
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { SNI_PRESETS, DEFAULT_SNI, cleanSni } from "@/config/sni";
 import { SubQr } from "@/components/sub-qr";
+import { getSubscriptionUrl } from "@/api/network";
 
 /**
  * 中转(前置机协议 + 落地出口)· 机器卡模式。
@@ -73,7 +74,7 @@ export default function RelayPage() {
     try {
       const res = await assignSelf({ nodeId, relay: true, landingId });
       if (res.code === 0 && res.data?.subToken) {
-        setSelfSubUrl(`${window.location.origin}/api/v1/open_api/sub?token=${res.data.subToken}`);
+        setSelfSubUrl(getSubscriptionUrl("sub", res.data.subToken));
         setSelfOpen(true);
         loadAll();
       } else {

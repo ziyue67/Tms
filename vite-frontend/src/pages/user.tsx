@@ -26,6 +26,7 @@ import { Spinner } from "@heroui/spinner";
 import { Progress } from "@heroui/progress";
 
 import toast from 'react-hot-toast';
+import { getSubscriptionUrl } from '@/api/network';
 import { 
   User, 
   UserForm, 
@@ -181,10 +182,10 @@ export default function UserPage() {
   const [subLines, setSubLines] = useState<any[]>([]);
   const [subAllToken, setSubAllToken] = useState<string>('');
   const [subUserName, setSubUserName] = useState<string>('');
-  const subUrl = (token: string) => `${window.location.origin}/api/v1/open_api/sub?token=${token}`;
+  const subUrl = (token: string) => getSubscriptionUrl("sub", token);
   // Clash / Mihomo 走独立路径:那边吃 YAML,和上面这条 base64 链接列表不通用,
   // 贴错了客户端里是空的。
-  const clashUrl = (token: string) => `${window.location.origin}/api/v1/open_api/clash?token=${token}`;
+  const clashUrl = (token: string) => getSubscriptionUrl("clash", token);
 
   const handleShowSub = async (user: User) => {
     try {
