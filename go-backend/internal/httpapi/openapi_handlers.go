@@ -14,43 +14,71 @@ import (
 )
 
 func (a *API) openSubscription(w http.ResponseWriter, r *http.Request) {
-	output, err := a.store.SubscriptionByToken(r.Context(), r.URL.Query().Get("token"))
-	if err != nil {
-		http.Error(w, "", http.StatusInternalServerError)
+	output, ok := a.loadSubscription(w, r)
+	if !ok {
 		return
 	}
-	prepareSubscriptionHeaders(w, output)
 	links := buildSubscriptionLinks(output)
+	if len(links) == 0 {
+		http.Error(w, "No available subscription nodes", http.StatusNotFound)
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(base64.StdEncoding.EncodeToString([]byte(strings.Join(links, "\n")))))
 }
 
 func (a *API) openClashSubscription(w http.ResponseWriter, r *http.Request) {
-	output, err := a.store.SubscriptionByToken(r.Context(), r.URL.Query().Get("token"))
-	if err != nil {
-		http.Error(w, "", http.StatusInternalServerError)
+	output, ok := a.loadSubscription(w, r)
+	if !ok {
 		return
 	}
-	prepareSubscriptionHeaders(w, output)
 	proxies := buildClashProxies(output)
+	if len(proxies) == 0 {
+		http.Error(w, "No available subscription nodes", http.StatusNotFound)
+		return
+	}
 	root := map[string]any{"mixed-port": 7890, "allow-lan": false, "mode": "rule", "log-level": "info", "external-controller": "127.0.0.1:9090",
 		"dns":     map[string]any{"enable": true, "ipv6": false, "enhanced-mode": "fake-ip", "fake-ip-range": "198.18.0.1/16", "nameserver": []string{"223.5.5.5", "119.29.29.29"}, "fallback": []string{"8.8.8.8", "1.1.1.1"}},
 		"proxies": proxies, "rules": []string{"DOMAIN-SUFFIX,local,DIRECT", "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve", "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve", "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve", "GEOIP,CN,DIRECT", "MATCH,漏网之鱼"}}
-	if len(proxies) == 0 {
-		root["proxy-groups"] = []any{}
-	} else {
-		names := make([]string, 0, len(proxies))
-		for _, proxy := range proxies {
-			names = append(names, fmt.Sprint(proxy["name"]))
-		}
-		root["proxy-groups"] = []map[string]any{{"name": "节点选择", "type": "select", "proxies": append([]string{"自动选择"}, names...)},
-			{"name": "自动选择", "type": "url-test", "proxies": names, "url": "http://www.gstatic.com/generate_204", "interval": 300, "tolerance": 50},
-			{"name": "漏网之鱼", "type": "select", "proxies": []string{"节点选择", "DIRECT"}}}
+	names := make([]string, 0, len(proxies))
+	for _, proxy := range proxies {
+		names = append(names, fmt.Sprint(proxy["name"]))
 	}
+	root["proxy-groups"] = []map[string]any{{"name": "节点选择", "type": "select", "proxies": append([]string{"自动选择"}, names...)},
+		{"name": "自动选择", "type": "url-test", "proxies": names, "url": "http://www.gstatic.com/generate_204", "interval": 300, "tolerance": 50},
+		{"name": "漏网之鱼", "type": "select", "proxies": []string{"节点选择", "DIRECT"}}}
 	// JSON is also a valid YAML 1.2 document and is accepted by Mihomo/Clash.
-	encoded, _ := json.MarshalIndent(root, "", "  ")
+	encoded, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		http.Error(w, "Unable to encode subscription", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 	_, _ = w.Write(encoded)
+}
+
+func (api *API) loadSubscription(response http.ResponseWriter, request *http.Request) (store.SubscriptionOutput, bool) {
+	prepareSubscriptionHeaders(response, store.SubscriptionOutput{})
+	token := strings.TrimSpace(request.URL.Query().Get("token"))
+	if token == "" {
+		http.Error(response, "Subscription token is required", http.StatusUnauthorized)
+		return store.SubscriptionOutput{}, false
+	}
+	output, err := api.store.SubscriptionByToken(request.Context(), token)
+	if err != nil {
+		http.Error(response, "Unable to load subscription", http.StatusInternalServerError)
+		return store.SubscriptionOutput{}, false
+	}
+	prepareSubscriptionHeaders(response, output)
+	if output.UserID == 0 {
+		http.Error(response, "Invalid subscription token", http.StatusUnauthorized)
+		return output, false
+	}
+	if !output.Usable {
+		http.Error(response, "Subscription is disabled, expired, or over quota", http.StatusForbidden)
+		return output, false
+	}
+	return output, true
 }
 
 func (a *API) openSubscriptionStore(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +148,7 @@ func buildSubscriptionLinks(output store.SubscriptionOutput) []string {
 }
 
 func clientLink(entry store.SubscriptionEntry, remark string) string {
-	fragment := url.QueryEscape(remark)
+	fragment := url.PathEscape(remark)
 	server := entry.Server
 	if strings.Contains(server, ":") && !strings.HasPrefix(server, "[") {
 		server = "[" + server + "]"
@@ -139,32 +167,32 @@ func clientLink(entry store.SubscriptionEntry, remark string) string {
 		encoded, _ := json.Marshal(value)
 		return "vmess://" + base64.StdEncoding.EncodeToString(encoded)
 	case "trojan":
-		return "trojan://" + url.QueryEscape(entry.Password) + "@" + address + "?security=reality&sni=" + url.QueryEscape(entry.SNI) + "&fp=chrome&pbk=" + url.QueryEscape(entry.PublicKey) + "&sid=" + url.QueryEscape(entry.ShortID) + "&type=tcp#" + fragment
+		return "trojan://" + url.User(entry.Password).String() + "@" + address + "?security=reality&sni=" + url.QueryEscape(entry.SNI) + "&fp=chrome&pbk=" + url.QueryEscape(entry.PublicKey) + "&sid=" + url.QueryEscape(entry.ShortID) + "&type=tcp#" + fragment
 	case "hysteria2":
 		var hysteriaConfig map[string]any
 		_ = json.Unmarshal([]byte(entry.ConfigJSON), &hysteriaConfig)
 		query := "?sni=" + url.QueryEscape(entry.SNI) + "&insecure=1"
 		if obfs := strings.ToLower(mapString(hysteriaConfig, "obfs")); obfs != "" && obfs != "none" {
-			if secret := firstString(mapString(hysteriaConfig, "obfs-password"), mapString(hysteriaConfig, "obfs_password")); secret != "" {
+			if secret := firstString(mapRawString(hysteriaConfig, "obfs-password"), mapRawString(hysteriaConfig, "obfs_password")); secret != "" {
 				query += "&obfs=" + url.QueryEscape(obfs) + "&obfs-password=" + url.QueryEscape(secret)
 			}
 		}
 		if alpn := splitALPN(firstString(mapString(hysteriaConfig, "alpn"), mapString(hysteriaConfig, "alpns"))); len(alpn) > 0 {
 			query += "&alpn=" + url.QueryEscape(strings.Join(alpn, ","))
 		}
-		return "hysteria2://" + url.QueryEscape(entry.Password) + "@" + address + query + "#" + fragment
+		return "hysteria2://" + url.User(entry.Password).String() + "@" + address + query + "#" + fragment
 	case "tuic":
-		return "tuic://" + url.QueryEscape(entry.UUID) + ":" + url.QueryEscape(entry.Password) + "@" + address + "?congestion_control=bbr&alpn=h3&sni=" + url.QueryEscape(entry.SNI) + "&allow_insecure=1#" + fragment
+		return "tuic://" + url.UserPassword(entry.UUID, entry.Password).String() + "@" + address + "?congestion_control=bbr&alpn=h3&sni=" + url.QueryEscape(entry.SNI) + "&allow_insecure=1#" + fragment
 	case "anytls":
-		return "anytls://" + url.QueryEscape(entry.Password) + "@" + address + "?insecure=1&sni=" + url.QueryEscape(entry.SNI) + "#" + fragment
+		return "anytls://" + url.User(entry.Password).String() + "@" + address + "?insecure=1&sni=" + url.QueryEscape(entry.SNI) + "#" + fragment
 	default:
-		return "vless://" + url.QueryEscape(entry.UUID) + "@" + address + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + url.QueryEscape(entry.SNI) + "&fp=chrome&pbk=" + url.QueryEscape(entry.PublicKey) + "&sid=" + url.QueryEscape(entry.ShortID) + "&type=tcp#" + fragment
+		return "vless://" + url.User(entry.UUID).String() + "@" + address + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + url.QueryEscape(entry.SNI) + "&fp=chrome&pbk=" + url.QueryEscape(entry.PublicKey) + "&sid=" + url.QueryEscape(entry.ShortID) + "&type=tcp#" + fragment
 	}
 }
 
 func buildClashProxies(output store.SubscriptionOutput) []map[string]any {
 	result := []map[string]any{}
-	used := map[string]int{}
+	used := map[string]int{"节点选择": 1, "自动选择": 1, "漏网之鱼": 1, "DIRECT": 1, "REJECT": 1, "GLOBAL": 1}
 	for _, entry := range output.Entries {
 		name := entry.Remark
 		if name == "" {
@@ -193,6 +221,8 @@ func buildClashProxies(output store.SubscriptionOutput) []map[string]any {
 			addCustomHysteria2Options(proxy, config)
 		case "tuic":
 			proxy["type"], proxy["uuid"], proxy["password"], proxy["sni"], proxy["alpn"], proxy["congestion-controller"], proxy["udp-relay-mode"], proxy["skip-cert-verify"] = "tuic", entry.UUID, entry.Password, entry.SNI, []string{"h3"}, "bbr", "native", true
+		case "anytls":
+			proxy["type"], proxy["password"], proxy["sni"], proxy["skip-cert-verify"] = "anytls", entry.Password, entry.SNI, true
 		default:
 			continue
 		}
@@ -238,7 +268,7 @@ func customClashProxy(value map[string]any, used map[string]int) (map[string]any
 		}
 		addCustomClashTransport(proxy, value)
 	case "trojan":
-		proxy["type"], proxy["password"], proxy["sni"] = "trojan", mapString(value, "password"), sni
+		proxy["type"], proxy["password"], proxy["sni"] = "trojan", mapRawString(value, "password"), sni
 		if strings.EqualFold(mapString(value, "security"), "reality") {
 			proxy["client-fingerprint"] = firstString(mapString(value, "fp"), "chrome")
 			proxy["reality-opts"] = map[string]any{"public-key": mapString(value, "pbk"), "short-id": mapString(value, "sid")}
@@ -252,15 +282,15 @@ func customClashProxy(value map[string]any, used map[string]int) (map[string]any
 		}
 		addCustomClashTransport(proxy, value)
 	case "shadowsocks":
-		proxy["type"], proxy["cipher"], proxy["password"] = "ss", mapString(value, "method"), mapString(value, "password")
+		proxy["type"], proxy["cipher"], proxy["password"] = "ss", mapString(value, "method"), mapRawString(value, "password")
 	case "hysteria2":
-		proxy["type"], proxy["password"], proxy["sni"], proxy["skip-cert-verify"] = "hysteria2", mapString(value, "password"), sni, true
+		proxy["type"], proxy["password"], proxy["sni"], proxy["skip-cert-verify"] = "hysteria2", mapRawString(value, "password"), sni, true
 		addCustomHysteria2Options(proxy, value)
 	case "tuic":
-		proxy["type"], proxy["uuid"], proxy["password"], proxy["sni"] = "tuic", mapString(value, "uuid"), mapString(value, "password"), sni
+		proxy["type"], proxy["uuid"], proxy["password"], proxy["sni"] = "tuic", mapString(value, "uuid"), mapRawString(value, "password"), sni
 		proxy["alpn"], proxy["congestion-controller"], proxy["udp-relay-mode"], proxy["skip-cert-verify"] = []string{"h3"}, firstString(mapString(value, "congestion_control"), "bbr"), "native", true
 	case "anytls":
-		proxy["type"], proxy["password"], proxy["sni"], proxy["skip-cert-verify"] = "anytls", mapString(value, "password"), sni, true
+		proxy["type"], proxy["password"], proxy["sni"], proxy["skip-cert-verify"] = "anytls", mapRawString(value, "password"), sni, true
 	default:
 		return nil, false
 	}
@@ -268,16 +298,18 @@ func customClashProxy(value map[string]any, used map[string]int) (map[string]any
 }
 
 func addCustomClashTransport(proxy, value map[string]any) {
-	network := strings.ToLower(firstString(mapString(value, "type"), mapString(value, "net")))
+	network := strings.ToLower(firstString(mapString(proxy, "network"), mapString(value, "type"), mapString(value, "net")))
 	path := firstString(mapString(value, "path"), mapString(value, "serviceName"))
 	switch network {
 	case "ws":
+		proxy["network"] = network
 		options := map[string]any{"path": path}
 		if host := mapString(value, "host"); host != "" {
 			options["headers"] = map[string]string{"Host": host}
 		}
 		proxy["ws-opts"] = options
 	case "grpc":
+		proxy["network"] = network
 		proxy["grpc-opts"] = map[string]any{"grpc-service-name": path}
 	}
 }
@@ -289,7 +321,7 @@ func addCustomClashTransport(proxy, value map[string]any) {
 // on the way out shows up as a red/failed node in every Clash client.
 func addCustomHysteria2Options(proxy, value map[string]any) {
 	obfs := strings.ToLower(mapString(value, "obfs"))
-	obfsPassword := firstString(mapString(value, "obfs-password"), mapString(value, "obfs_password"))
+	obfsPassword := firstString(mapRawString(value, "obfs-password"), mapRawString(value, "obfs_password"))
 	switch obfs {
 	case "", "none":
 		// No obfuscation requested: omit both keys.
@@ -334,10 +366,14 @@ func splitALPN(raw string) []string {
 }
 
 func mapString(value map[string]any, key string) string {
+	return strings.TrimSpace(mapRawString(value, key))
+}
+
+func mapRawString(value map[string]any, key string) string {
 	if value[key] == nil {
 		return ""
 	}
-	return strings.TrimSpace(fmt.Sprint(value[key]))
+	return fmt.Sprint(value[key])
 }
 
 func mapInt(value map[string]any, key string) int {
@@ -368,9 +404,19 @@ func protocolName(value string) string {
 	return "VLESS"
 }
 func uniqueName(value string, used map[string]int) string {
-	used[value]++
-	if used[value] == 1 {
-		return value
+	count := used[value] + 1
+	for {
+		candidate := value
+		if count > 1 {
+			candidate = fmt.Sprintf("%s %d", value, count)
+		}
+		if candidate == value || used[candidate] == 0 {
+			used[value] = count
+			if candidate != value {
+				used[candidate] = 1
+			}
+			return candidate
+		}
+		count++
 	}
-	return fmt.Sprintf("%s %d", value, used[value])
 }

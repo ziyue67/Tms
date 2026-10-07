@@ -35,6 +35,7 @@ import {
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { SNI_PRESETS, DEFAULT_SNI, cleanSni } from "@/config/sni";
 import { SubQr } from "@/components/sub-qr";
+import { getSubscriptionUrl } from "@/api/network";
 
 /**
  * 协议管理(合体面板)· 机器卡模式。
@@ -86,7 +87,7 @@ export default function InboundPage() {
     try {
       const res = await assignSelf({ nodeId });
       if (res.code === 0 && res.data?.subToken) {
-        setSelfSubUrl(`${window.location.origin}/api/v1/open_api/sub?token=${res.data.subToken}`);
+        setSelfSubUrl(getSubscriptionUrl("sub", res.data.subToken));
         setSelfOpen(true);
         loadAll();
       } else {

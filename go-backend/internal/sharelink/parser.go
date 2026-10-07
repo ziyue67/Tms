@@ -116,7 +116,7 @@ func parseShadowsocks(raw string) (Parsed, error) {
 		credential, address = body[:at], body[at+1:]
 		if decoded, err := decodeBase64(credential); err == nil {
 			credential = decoded
-		} else if decoded, err := url.QueryUnescape(credential); err == nil {
+		} else if decoded, err := url.PathUnescape(credential); err == nil {
 			credential = decoded
 		}
 	} else {
@@ -183,12 +183,13 @@ func parseURLProtocol(raw, protocol string) (Parsed, error) {
 	}
 	credential := u.User.Username()
 	password, hasPassword := u.User.Password()
-	values := map[string]any{"server": u.Hostname(), "port": port, "name": fragment(u)}
+	values := map[string]any{}
 	for key, items := range u.Query() {
 		if len(items) > 0 {
 			values[key] = items[len(items)-1]
 		}
 	}
+	values["server"], values["port"], values["name"] = u.Hostname(), port, fragment(u)
 	switch protocol {
 	case "vless":
 		values["uuid"] = credential
@@ -246,7 +247,7 @@ func canonical(value string) string {
 }
 func stripFragment(value string) (string, string) {
 	if index := strings.Index(value, "#"); index >= 0 {
-		name, _ := url.QueryUnescape(value[index+1:])
+		name, _ := url.PathUnescape(value[index+1:])
 		return value[:index], name
 	}
 	return value, ""
@@ -275,7 +276,7 @@ func validPort(value string) (int, error) {
 	}
 	return port, nil
 }
-func fragment(u *url.URL) string { value, _ := url.QueryUnescape(u.Fragment); return value }
+func fragment(parsedURL *url.URL) string { return parsedURL.Fragment }
 func text(value any) string {
 	if value == nil {
 		return ""
