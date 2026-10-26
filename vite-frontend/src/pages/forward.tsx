@@ -133,6 +133,8 @@ interface DiagnosisResult {
     message?: string;
     averageTime?: number;
     packetLoss?: number;
+    udpOnly?: boolean;
+    protocol?: string;
   }>;
 }
 
@@ -2266,9 +2268,11 @@ export default function ForwardPage() {
                     <div className="space-y-4">
                       {diagnosisResult.results.map((result, index) => {
                         const quality = getQualityDisplay(result.averageTime, result.packetLoss);
+                        const udpOnly = result.udpOnly === true;
+                        const statusColor: "warning" | "success" | "danger" = udpOnly ? "warning" : result.success ? "success" : "danger";
                         
                         return (
-                          <Card key={index} className={`shadow-sm border ${result.success ? 'border-success' : 'border-danger'}`}>
+                          <Card key={index} className={`shadow-sm border ${udpOnly ? 'border-warning' : result.success ? 'border-success' : 'border-danger'}`}>
                             <CardHeader className="pb-2">
                               <div className="flex items-center justify-between w-full">
                                 <div>
@@ -2276,11 +2280,11 @@ export default function ForwardPage() {
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className="text-small text-default-500">转发机: {result.nodeName}</span>
                                     <Chip 
-                                      color={result.success ? 'success' : 'danger'} 
+                                      color={statusColor}
                                       variant="flat" 
                                       size="sm"
                                     >
-                                      {result.success ? '连接成功' : '连接失败'}
+                                      {udpOnly ? 'UDP-only（跳过 TCP 探测）' : result.success ? '连接成功' : '连接失败'}
                                     </Chip>
                                   </div>
                                 </div>
@@ -2288,7 +2292,22 @@ export default function ForwardPage() {
                             </CardHeader>
                             
                             <CardBody className="pt-0">
-                              {result.success ? (
+                              {udpOnly ? (
+                                <div className="space-y-2">
+                                  <div className="text-small text-default-500 flex items-center gap-1">
+                                    <span className="flex-shrink-0">目标地址:</span>
+                                    <code className="font-mono truncate min-w-0" title={`${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}`}>
+                                      {result.targetIp}{result.targetPort ? ':' + result.targetPort : ''}
+                                    </code>
+                                  </div>
+                                  <Alert
+                                    color="warning"
+                                    variant="flat"
+                                    title="已跳过 TCP 探活"
+                                    description={result.message || `${result.protocol || '该协议'} 为 UDP-only 协议，TCP 探活不适用`}
+                                  />
+                                </div>
+                              ) : result.success ? (
                                 <div className="space-y-3">
                                   <div className="grid grid-cols-3 gap-4">
                                     <div className="text-center">

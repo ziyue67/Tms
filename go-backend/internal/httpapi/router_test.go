@@ -23,6 +23,7 @@ type fakeStore struct {
 	configs          map[string]string
 	updatedPassword  string
 	updatedConfigMap map[string]string
+	queryMaps        func(context.Context, string, ...any) ([]map[string]any, error)
 }
 
 func (s *fakeStore) Ping(context.Context) error { return nil }
@@ -105,7 +106,10 @@ func (s *fakeStore) UserPackage(context.Context, int64) (store.UserPackage, erro
 func (s *fakeStore) RecordTrafficUsage(context.Context, int64, int64, int64, int64, int64) error {
 	return nil
 }
-func (s *fakeStore) QueryMaps(context.Context, string, ...any) ([]map[string]any, error) {
+func (s *fakeStore) QueryMaps(ctx context.Context, query string, args ...any) ([]map[string]any, error) {
+	if s.queryMaps != nil {
+		return s.queryMaps(ctx, query, args...)
+	}
 	return []map[string]any{}, nil
 }
 func (s *fakeStore) InsertMap(context.Context, string, map[string]any) (int64, error) { return 1, nil }

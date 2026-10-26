@@ -666,7 +666,13 @@ func (a *API) diagnoseForward(w http.ResponseWriter, r *http.Request) {
 	}
 	host, port := splitTarget(toString(rows[0]["remoteAddr"]))
 	nodeID, _ := requestInt64(rows[0]["inNodeId"])
-	result := a.tcpPing(r, nodeID, toString(rows[0]["nodeName"]), host, port, "入口->目标")
+	protocol := a.inboundProtocolForPort(r.Context(), nodeID, port)
+	var result map[string]any
+	if isUDPOnlyProtocol(protocol) {
+		result = skippedUDPProbeResult(nodeID, toString(rows[0]["nodeName"]), host, port, "入口->目标", protocol)
+	} else {
+		result = a.tcpPing(r, nodeID, toString(rows[0]["nodeName"]), host, port, "入口->目标")
+	}
 	writeResponse(w, OK(map[string]any{"forwardId": id, "forwardName": rows[0]["name"], "results": []any{result}, "timestamp": time.Now().UnixMilli()}))
 }
 
