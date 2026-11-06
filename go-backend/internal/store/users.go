@@ -188,22 +188,68 @@ func (s *Store) UpdateUsernamePassword(ctx context.Context, id int64, username, 
 	return nil
 }
 
+// ResetUserFlow 把账号的流量计数清零。
+//
+// 必须同时清 user_subscription.traffic_used_bytes:有套餐的用户,用量记在订阅表上,
+// 用户列表卡片、"已使用"进度条、我的订阅页读的都是这个字段(见 attachSubscription,
+// 它把 traffic_used_bytes 塞进 InboundFlow 对外输出)。只清 user.in_flow/out_flow
+// 的话接口返回成功、界面却一点变化都没有 —— 也就是"点了没反应"。
 func (s *Store) ResetUserFlow(ctx context.Context, id int64) (bool, error) {
-	return s.resetFlow(ctx, "user", id)
-}
-
-func (s *Store) ResetUserTunnelFlow(ctx context.Context, id int64) (bool, error) {
-	return s.resetFlow(ctx, "user_tunnel", id)
-}
-
-func (s *Store) resetFlow(ctx context.Context, table string, id int64) (bool, error) {
-	query := "UPDATE " + s.quote(table) + " SET " + s.quote("in_flow") + " = 0, " + s.quote("out_flow") + " = 0 WHERE " + s.quote("id") + " = ?"
-	result, err := s.db.ExecContext(ctx, s.bind(query), id)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
-	rows, err := result.RowsAffected()
-	return rows == 1, err
+	defer tx.Rollback()
+
+	// 用 RowsAffected 判存在会误判:MySQL 在新值等于旧值(本来就已经是 0)时返回 0 行,
+	// 于是同一个账号第二次重置会被当成"用户不存在"。改成先查存在性。
+	exists, err := s.rowExists(ctx, tx, "user", id)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+
+	now := time.Now().UnixMilli()
+	if _, err := tx.ExecContext(ctx, s.bind("UPDATE "+s.quote("user")+" SET "+s.quote("in_flow")+" = 0, "+s.quote("out_flow")+" = 0, "+s.quote("updated_time")+" = ? WHERE "+s.quote("id")+" = ?"), now, id); err != nil {
+		return false, err
+	}
+	// user_subscription.user_id 唯一,一个用户最多一行;没套餐时这条更新 0 行,不影响结果。
+	// 这里不按 status 过滤:attachSubscription 读的是最后一条订阅记录,不管状态,
+	// 只要它还有用量就会顶掉 user.in_flow 显示出来。
+	if _, err := tx.ExecContext(ctx, s.bind("UPDATE "+s.quote("user_subscription")+" SET "+s.quote("traffic_used_bytes")+" = 0, "+s.quote("updated_time")+" = ? WHERE "+s.quote("user_id")+" = ?"), now, id); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Store) ResetUserTunnelFlow(ctx context.Context, id int64) (bool, error) {
+	// 同样不能用 RowsAffected 判存在:隧道权限流量本来就是 0 时,重置会被报"隧道不存在"。
+	var exists int
+	err := s.db.QueryRowContext(ctx, s.bind("SELECT 1 FROM "+s.quote("user_tunnel")+" WHERE "+s.quote("id")+" = ?"), id).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if _, err := s.db.ExecContext(ctx, s.bind("UPDATE "+s.quote("user_tunnel")+" SET "+s.quote("in_flow")+" = 0, "+s.quote("out_flow")+" = 0 WHERE "+s.quote("id")+" = ?"), id); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Store) rowExists(ctx context.Context, tx *sql.Tx, table string, id int64) (bool, error) {
+	var one int
+	err := tx.QueryRowContext(ctx, s.bind("SELECT 1 FROM "+s.quote(table)+" WHERE "+s.quote("id")+" = ?"), id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (s *Store) UserCleanupCommands(ctx context.Context, userID int64) ([]CleanupCommand, error) {
