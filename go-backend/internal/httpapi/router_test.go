@@ -96,6 +96,8 @@ func (s *fakeStore) ResetUserFlow(context.Context, int64) (bool, error) { return
 func (s *fakeStore) ResetUserTunnelFlow(context.Context, int64) (bool, error) {
 	return true, nil
 }
+
+func (s *fakeStore) ResetUserSubTokens(context.Context, int64) (string, error) { return "newtoken", nil }
 func (s *fakeStore) UserCleanupCommands(context.Context, int64) ([]store.CleanupCommand, error) {
 	return nil, nil
 }

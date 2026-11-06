@@ -156,6 +156,8 @@ export const renameLanding = (id: number, name: string) => Network.post("/landin
 export const getUserLines = (userId: number) => Network.post("/inbound/user-lines", { userId });
 // 车友自助:取我自己的订阅线路(不需要管理员权限)
 export const getMyLines = () => Network.post("/inbound/my-lines");
+// 车友自助:重置订阅链接(聚合/单线路的 token 全换新,旧链接立刻失效)
+export const resetMySubToken = () => Network.post("/inbound/reset-sub-token");
 
 // 版本信息 / 更新检查(后端拿构建时注入的 commit 跟 GitHub main 比)
 export const getVersionInfo = () => Network.post("/version/info");

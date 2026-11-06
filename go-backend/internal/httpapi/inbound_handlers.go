@@ -717,6 +717,22 @@ func (a *API) myInboundLines(w http.ResponseWriter, r *http.Request) {
 	}
 	a.writeUserLines(w, r, uid)
 }
+
+// resetMySubToken 车友自助换订阅链接:链接泄出去了就在这里一键重置。
+// 聚合链接、单线路链接、协议授权里的 token 会全部换新,旧链接马上 404。
+func (a *API) resetMySubToken(w http.ResponseWriter, r *http.Request) {
+	uid, ok := currentUserID(w, r)
+	if !ok {
+		return
+	}
+	token, err := a.store.ResetUserSubTokens(r.Context(), uid)
+	if err != nil {
+		a.logger.Error("reset sub token", "user_id", uid, "error", err)
+		writeResponse(w, Error(-2, "重置订阅链接失败"))
+		return
+	}
+	writeResponse(w, OK(map[string]any{"allSubToken": token}))
+}
 func (a *API) writeUserLines(w http.ResponseWriter, r *http.Request, userID int64) {
 	rows, err := a.store.QueryMaps(r.Context(), "SELECT il.node_id,n.name AS node_name,il.landing_id,l.name AS landing_name,il.sub_token,il.flow AS quota_gb,il.exp_time AS line_exp_time,il.status AS line_status,COUNT(iu.id) AS protocol_count,COALESCE(SUM(f.in_flow+f.out_flow),0) AS flow FROM inbound_line il JOIN node n ON n.id=il.node_id LEFT JOIN landing l ON l.id=il.landing_id LEFT JOIN inbound i ON i.node_id=il.node_id AND (i.landing_id=il.landing_id OR (i.landing_id IS NULL AND il.landing_id IS NULL)) LEFT JOIN inbound_user iu ON iu.inbound_id=i.id AND iu.user_id=il.user_id AND iu.status=1 LEFT JOIN forward f ON f.id=iu.gost_forward_id WHERE il.user_id=? GROUP BY il.id,il.node_id,n.name,il.landing_id,l.name,il.sub_token,il.flow,il.exp_time,il.status ORDER BY il.node_id,il.landing_id", userID)
 	if err != nil {

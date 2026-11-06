@@ -3,8 +3,9 @@ import { Card, CardBody } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Chip } from "@heroui/chip";
+import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure } from "@heroui/modal";
 import toast from "react-hot-toast";
-import { getMyLines, getSubscriptionDashboard, getUserPackageInfo } from "@/api";
+import { getMyLines, getSubscriptionDashboard, getUserPackageInfo, resetMySubToken } from "@/api";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { SubQrToggle } from "@/components/sub-qr";
 import { getSubscriptionUrl } from "@/api/network";
@@ -21,6 +22,10 @@ export default function MySubPage() {
   const [account, setAccount] = useState<any>(null); // 只用来判断账号是否被停用/到期
   const [subscription, setSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // 重置订阅链接:旧链接泄出去了就换一套 token,旧的全部失效
+  const { isOpen: resetOpen, onOpen: onResetOpen, onClose: onResetClose } = useDisclosure();
+  const [resetting, setResetting] = useState(false);
 
   const subUrl = (token: string) => getSubscriptionUrl("sub", token);
   // Clash / Mihomo 是另一套格式(YAML),和上面那条 base64 链接列表不通用。
@@ -52,6 +57,27 @@ export default function MySubPage() {
     const refreshTimer = window.setInterval(load, 30_000);
     return () => window.clearInterval(refreshTimer);
   }, []);
+
+  // 重置订阅链接:后端会把聚合 token、单线路 token、协议授权的 sub_token 全部换新,
+  // 所以执行完所有旧链接(null 也一样)立刻 404,必须重新把新链接导进客户端
+  const handleResetSubToken = async () => {
+    setResetting(true);
+    try {
+      const res = await resetMySubToken();
+      if (res.code === 0) {
+        const next = res.data?.allSubToken;
+        if (next) setAllSubToken(next);
+        toast.success("已重置,旧链接已失效,请用新链接重新导入");
+        onResetClose();
+        await load();
+      } else {
+        toast.error(res.msg || "重置失败");
+      }
+    } catch (e) {
+      toast.error("重置失败");
+    }
+    setResetting(false);
+  };
 
   const GB = 1024 * 1024 * 1024;
   const fmtGB = (bytes: number) => ((bytes || 0) / GB).toFixed(2) + " GB";
@@ -89,6 +115,9 @@ export default function MySubPage() {
               <Chip size="sm" variant="flat" className="ml-auto">
                 {lines.reduce((n: number, l: any) => n + (l.protocolCount || 0), 0)} 协议
               </Chip>
+              <Button size="sm" variant="flat" color="danger" onPress={onResetOpen}>
+                重置链接
+              </Button>
             </div>
             <Input
               label="v2rayN / Base64 订阅"
@@ -140,6 +169,9 @@ export default function MySubPage() {
               用 <span className="text-default-500">v2rayN / 小火箭 / v2rayNG</span> 复制上面那条;
               用 <span className="text-default-500">Clash Verge / ClashMeta / Mihomo</span> 复制「Clash / Mihomo 版」——
               两种格式不通用,贴错了客户端里会是空的。
+            </div>
+            <div className="text-xs text-default-400">
+              链接不小心发出去了?点右上角「重置链接」,旧链接立刻作废,页面会给出新链接。
             </div>
           </CardBody>
         </Card>
@@ -264,6 +296,33 @@ export default function MySubPage() {
           </div>
         </CardBody>
       </Card>
+
+      {/* 重置订阅链接确认框 */}
+      <Modal isOpen={resetOpen} onClose={onResetClose} placement="center" backdrop="blur">
+        <ModalContent>
+          <ModalHeader>重置订阅链接</ModalHeader>
+          <ModalBody>
+            <p className="text-sm">
+              重置后,你现在的<strong>全部订阅链接</strong>会立刻失效 —— 包括上面「全部线路」那条,
+              以及每条线路单独的链接。客户端里再更新订阅会拉不到节点。
+            </p>
+            <p className="text-sm">
+              新链接会直接显示在页面上,复制到客户端重新导入即可。别人手里的旧链接进不来了。
+            </p>
+            <p className="text-xs text-default-500">
+              只有怀疑链接外泄时才需要重置,平时不用动;重置不需要管理员。
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={onResetClose}>
+              取消
+            </Button>
+            <Button color="danger" isLoading={resetting} onPress={handleResetSubToken}>
+              确认重置
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   );
 }
