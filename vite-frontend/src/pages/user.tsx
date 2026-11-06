@@ -98,6 +98,11 @@ const getUserStatus = (user: User) => {
 };
 
 const calculateUserTotalUsedFlow = (user: User): number => {
+  // 套餐用户的用量只有一个「总量」,后端把 traffic_used_bytes 覆盖到 inFlow 上输出
+  // (见 store.attachSubscription),下行的 0 是假象。所以有套餐时优先读总量字段。
+  if (user.subscriptionPlanId !== undefined && user.subscriptionPlanId !== null) {
+    return Number(user.subscriptionTrafficUsedBytes || 0);
+  }
   return (user.inFlow || 0) + (user.outFlow || 0);
 };
 
@@ -1436,20 +1441,32 @@ export default function UserPage() {
                     当前流量使用情况：
                   </div>
                   <div className="mt-1 space-y-1">
-                    <div className="flex justify-between">
-                      <span>上行流量：</span>
-                      <span className="font-mono">{userToReset ? formatFlow(userToReset.inFlow || 0) : '-'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>下行流量：</span>
-                      <span className="font-mono">{userToReset ? formatFlow(userToReset.outFlow || 0) : '-'}</span>
-                    </div>
-                    <div className="flex justify-between font-medium">
-                      <span>总计：</span>
-                      <span className="font-mono text-warning-700 dark:text-warning-300">
-                        {userToReset ? formatFlow(calculateUserTotalUsedFlow(userToReset)) : '-'}
-                      </span>
-                    </div>
+                    {/* 套餐用户只有一个总量,没有上下行拆分,硬拆会显示成「上行 93.9G / 下行 0B」 */}
+                    {userToReset && userToReset.subscriptionPlanId !== undefined && userToReset.subscriptionPlanId !== null ? (
+                      <div className="flex justify-between font-medium">
+                        <span>套餐已用总量：</span>
+                        <span className="font-mono text-warning-700 dark:text-warning-300">
+                          {formatFlow(calculateUserTotalUsedFlow(userToReset))}
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between">
+                          <span>上行流量：</span>
+                          <span className="font-mono">{userToReset ? formatFlow(userToReset.inFlow || 0) : '-'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>下行流量：</span>
+                          <span className="font-mono">{userToReset ? formatFlow(userToReset.outFlow || 0) : '-'}</span>
+                        </div>
+                        <div className="flex justify-between font-medium">
+                          <span>总计：</span>
+                          <span className="font-mono text-warning-700 dark:text-warning-300">
+                            {userToReset ? formatFlow(calculateUserTotalUsedFlow(userToReset)) : '-'}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
