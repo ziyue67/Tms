@@ -25,7 +25,12 @@ build_download_url() {
 INSTALL_DIR="/etc/gost"
 FORCE_CN=0                                       # -c 强制走国内 GitHub 镜像(国内机器 ipinfo 常超时/失败)
 GH_MIRROR="${GH_MIRROR:-https://ghfast.top/}"    # 国内 GitHub 加速镜像,可用环境变量覆盖
-PUBLIC_PORT_RANGE="20000:39999"                  # GOST 对外转发端口；面板安装命令会按节点配置覆盖
+PUBLIC_PORT_RANGE="20000:39999"                  # 旧行为:整段放行;现在只在 -r 兜底时使用
+PROTOCOL_PORTS="${PROTOCOL_PORTS:-}"             # -P 指定要放行的端口(逗号分隔),不传就自动探测 gost 监听端口
+FIREWALL_ONLY=0                                  # -f 只同步防火墙,不重装
+ALLOW_RANGE_FALLBACK=0                           # -r 探测不到端口时退回整段放行(老行为)
+PORT_RANGE_GIVEN=0                               # 面板传了 -p(端口段)就记一下,只用来提示已忽略
+RELEASE_INSTALL_URL="https://github.com/ziyue67/Tms/releases/latest/download/install.sh"
 
 
 
@@ -38,7 +43,8 @@ show_menu() {
   echo "1. 安装"
   echo "2. 更新"  
   echo "3. 卸载"
-  echo "4. 退出"
+  echo "4. 同步防火墙端口(建完入站后跑)"
+  echo "5. 退出"
   echo "==============================================="
 }
 
@@ -141,12 +147,15 @@ get_config_params() {
 }
 
 # 解析命令行参数
-while getopts "a:s:cp:" opt; do
+while getopts "a:s:cp:P:fr" opt; do
   case $opt in
     a) SERVER_ADDR="$OPTARG" ;;
     s) SECRET="$OPTARG" ;;
     c) FORCE_CN=1 ;;
-    p) PUBLIC_PORT_RANGE="$OPTARG" ;;
+    p) PUBLIC_PORT_RANGE="$OPTARG"; PORT_RANGE_GIVEN=1 ;;
+    P) PROTOCOL_PORTS="$OPTARG" ;;
+    f) FIREWALL_ONLY=1 ;;
+    r) ALLOW_RANGE_FALLBACK=1 ;;
     *) echo "❌ 无效参数"; exit 1 ;;
   esac
 done
@@ -165,37 +174,129 @@ validate_public_port_range() {
   fi
 }
 
-# 协议端口由 gost 监听在公网，sing-box 的 41000+ 仅监听 127.0.0.1，
-# 因此必须放行的是这里的公网转发范围，而不是 41000+ 内部端口。
-configure_public_firewall() {
-  validate_public_port_range
-  echo ""
-  echo "🔐 配置 GOST 公网转发端口: ${PUBLIC_PORT_RANGE}（TCP + UDP）"
-  if command -v ufw >/dev/null 2>&1; then
-    if ufw allow "${PUBLIC_PORT_RANGE}/tcp" && ufw allow "${PUBLIC_PORT_RANGE}/udp"; then
-      echo "✅ UFW 已放行 ${PUBLIC_PORT_RANGE}/tcp 和 ${PUBLIC_PORT_RANGE}/udp"
-    else
-      echo "⚠️ UFW 自动放行失败，请用下方命令手动执行。"
-    fi
+# 需要 root:ufw / firewall-cmd 都要提权(手工跑 -f 时通常不是 root)。
+run_priv() {
+  if [[ $EUID -eq 0 ]]; then
+    "$@"
   else
-    echo "ℹ️ 未检测到 UFW，未修改主机防火墙。"
+    sudo "$@"
   fi
-  echo "手动放行命令（云防火墙/安全组也必须放行同一范围）："
-  echo "  ufw allow ${PUBLIC_PORT_RANGE}/tcp"
-  echo "  ufw allow ${PUBLIC_PORT_RANGE}/udp"
-  echo "  # 不要放行 41000+；它们是仅本机使用的 sing-box 内部端口。"
+}
+
+# 逗号/空格分隔的端口清单 → 去重排序,非法项丢掉
+normalize_ports() {
+  tr ', ' '\n\n' <<<"$1" \
+    | grep -E '^[0-9]{1,5}$' \
+    | awk '$1 >= 1 && $1 <= 65535' \
+    | sort -n -u | paste -sd, -
+}
+
+# 从运行中的 gost 反查它对外监听的端口。
+# 127.0.0.1 / ::1 上的(sing-box 的 41000+ 内部端口)不用放行,直接剔除。
+# 注意:非 root 跑 ss 看不到进程名,探测会为空。
+detect_gost_ports() {
+  command -v ss >/dev/null 2>&1 || return 0
+  ss -lntup 2>/dev/null | grep -i 'gost' | awk '{print $5}' \
+    | grep -vE '^(127\.|\[::1\])' \
+    | sed -E 's/^.*:([0-9]+)$/\1/' \
+    | grep -E '^[0-9]+$' \
+    | sort -n -u | paste -sd, -
+}
+
+# 只放行给定端口(TCP + UDP):gost 的每个转发服务都是 tcp/udp 各起一个监听。
+apply_firewall_rules() {
+  local ports="$1"
+  local -a list=() rules=()
+  local p
+  IFS=',' read -r -a list <<<"$ports"
+  for p in "${list[@]}"; do
+    rules+=("${p}/tcp" "${p}/udp")
+  done
+
+  echo ""
+  echo "🔐 放行协议端口(共 ${#list[@]} 个): ${ports}（TCP + UDP）"
+
+  if command -v ufw >/dev/null 2>&1; then
+    for p in "${rules[@]}"; do run_priv ufw allow "$p" >/dev/null 2>&1 || true; done
+    run_priv ufw reload >/dev/null 2>&1 || true
+    echo "✅ UFW 已放行: ${rules[*]}"
+  elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+    for p in "${rules[@]}"; do run_priv firewall-cmd --permanent --add-port="$p" >/dev/null 2>&1 || true; done
+    run_priv firewall-cmd --reload >/dev/null 2>&1 || true
+    echo "✅ firewalld 已放行: ${rules[*]}"
+  else
+    echo "ℹ️ 没检测到 ufw/firewalld,用下面的命令自己加(iptables 不持久化,重启要重来):"
+    for p in "${rules[@]}"; do
+      echo "  iptables -C INPUT -p ${p#*/} --dport ${p%/*} -j ACCEPT || iptables -I INPUT -p ${p#*/} --dport ${p%/*} -j ACCEPT"
+    done
+  fi
+
+  echo "云安全组照着这一行放就行(不用再开 20000-39999 整段):"
+  echo "  TCP ${ports}"
+  echo "  UDP ${ports}"
+}
+
+# 协议端口由 gost 监听在公网,sing-box 的 41000+ 仅监听 127.0.0.1,
+# 所以这里只放行 gost 真正在用的那几个端口,不再整段放行。
+configure_public_firewall() {
+  local ports="$PROTOCOL_PORTS"
+
+  if [[ -n "$ports" ]]; then
+    ports=$(normalize_ports "$ports")
+    if [[ -z "$ports" ]]; then
+      echo "❌ -P 里没有合法端口: $PROTOCOL_PORTS"
+      exit 1
+    fi
+    echo "🔧 使用 -P 指定的协议端口: ${ports}"
+  else
+    ports=$(detect_gost_ports)
+    if [[ -n "$ports" ]]; then
+      echo "🔎 探测到 gost 正在监听的端口: ${ports}"
+    fi
+  fi
+
+  if [[ -z "$ports" ]]; then
+    if [[ "$ALLOW_RANGE_FALLBACK" = "1" ]]; then
+      validate_public_port_range
+      echo "⚠️ 没有可用端口,按 -r 退回整段放行: ${PUBLIC_PORT_RANGE}（TCP + UDP）"
+      command -v ufw >/dev/null 2>&1 && {
+        run_priv ufw allow "${PUBLIC_PORT_RANGE}/tcp" >/dev/null 2>&1 || true
+        run_priv ufw allow "${PUBLIC_PORT_RANGE}/udp" >/dev/null 2>&1 || true
+        run_priv ufw reload >/dev/null 2>&1 || true
+      }
+      return
+    fi
+    local rerun="bash ./install.sh -f"
+    [[ $EUID -ne 0 ]] && rerun="sudo bash ./install.sh -f"
+    echo ""
+    echo "ℹ️ 本机还没有 gost 在监听的公网端口(新装机,或入站/转发还没建),本次不放行任何端口。"
+    echo "   等面板里把入站建好后再同步一次:"
+    echo "   curl -fsSL ${RELEASE_INSTALL_URL} -o ./install.sh && ${rerun}"
+    echo "   也知道端口的话可以直接指定: ${rerun} -P 20000,20001,20002"
+    echo "   想恢复老的整段放行: 加 -r"
+    return
+  fi
+
+  if [[ "$PORT_RANGE_GIVEN" = "1" && "$ALLOW_RANGE_FALLBACK" != "1" ]]; then
+    echo "ℹ️ 面板传的端口段 ${PUBLIC_PORT_RANGE} 已忽略(只放行实际在用的端口;要整段放行加 -r)"
+  fi
+
+  apply_firewall_rules "$ports"
 }
 
 # 计算 gost 下载地址(国内或 -c 时走镜像;ipinfo 检测加超时,避免无网时卡死)
-DOWNLOAD_URL=$(build_download_url)
-if [ "$FORCE_CN" = "1" ]; then
-  COUNTRY="CN"
-else
-  COUNTRY=$(curl -s --max-time 5 https://ipinfo.io/country 2>/dev/null || echo "")
-fi
-if [ "$COUNTRY" = "CN" ]; then
-  DOWNLOAD_URL="${GH_MIRROR}${DOWNLOAD_URL}"
-  echo "🌏 使用国内镜像: ${GH_MIRROR}"
+# -f 只同步防火墙,不下载东西,跳过这段网络探测
+if [[ "$FIREWALL_ONLY" != "1" ]]; then
+  DOWNLOAD_URL=$(build_download_url)
+  if [ "$FORCE_CN" = "1" ]; then
+    COUNTRY="CN"
+  else
+    COUNTRY=$(curl -s --max-time 5 https://ipinfo.io/country 2>/dev/null || echo "")
+  fi
+  if [ "$COUNTRY" = "CN" ]; then
+    DOWNLOAD_URL="${GH_MIRROR}${DOWNLOAD_URL}"
+    echo "🌏 使用国内镜像: ${GH_MIRROR}"
+  fi
 fi
 
 # 安装功能
@@ -288,6 +389,31 @@ EOF
     echo "❌ gost服务启动失败，请执行以下命令查看日志："
     echo "journalctl -u gost -f"
   fi
+
+  print_firewall_summary
+}
+
+# 安装完成后最后一块提示:云厂商安全组到底要放行哪几个端口
+print_firewall_summary() {
+  local ports="$PROTOCOL_PORTS"
+  [[ -n "$ports" ]] && ports=$(normalize_ports "$ports")
+  [[ -z "$ports" ]] && ports=$(detect_gost_ports)
+
+  echo ""
+  echo "================= 云安全组需要手动放行 ================="
+  if [[ -n "$ports" ]]; then
+    echo "  TCP ${ports}"
+    echo "  UDP ${ports}"
+  else
+    echo "  现在还没有端口可放行(入站/转发还没建)。"
+    echo "  这个节点在面板里的端口段是 ${PUBLIC_PORT_RANGE}，每建一个入站/转发"
+    echo "  就从段首开始占用一个空闲端口(通常就是 20000 起连续几个)。"
+    echo "  建好后执行下面这行，会打印要放行的准确清单:"
+    echo "   curl -fsSL ${RELEASE_INSTALL_URL} -o ./install.sh && sudo bash ./install.sh -f"
+  fi
+  echo "  ⚠️ 不要放行 20000-39999 整段,也不要放 41000+"
+  echo "     (41000+ 是 sing-box 内部端口,只监听 127.0.0.1,放出去等于裸奔)"
+  echo "======================================================="
 }
 
 # 更新功能
@@ -390,6 +516,12 @@ uninstall_gost() {
 
 # 主逻辑
 main() {
+  # -f 只同步防火墙:入站建好后不用重装,跑一次把新端口补上就行
+  if [[ "$FIREWALL_ONLY" = "1" ]]; then
+    configure_public_firewall
+    exit 0
+  fi
+
   # 如果提供了命令行参数，直接执行安装
   if [[ -n "$SERVER_ADDR" && -n "$SECRET" ]]; then
     install_gost
@@ -419,9 +551,10 @@ main() {
         exit 0
         ;;
       4)
-        block_protocol
-        delete_self
-        exit 0
+        # 这里以前调的是不存在的 block_protocol(),选 4 会报 command not found 还把脚本自己删了
+        configure_public_firewall
+        echo ""
+        read -p "按回车返回菜单..." _
         ;;
       5)
         echo "👋 退出脚本"
