@@ -252,6 +252,63 @@ func (s *Store) rowExists(ctx context.Context, tx *sql.Tx, table string, id int6
 	return err == nil, err
 }
 
+// ResetUserSubTokens 换掉该用户的全部订阅 token,旧链接立刻失效。
+//
+// token 存在三个地方,少换一个旧链接就还能用:
+//   - user.all_sub_token      聚合链接(全部线路)用
+//   - inbound_line.sub_token  单线路链接用
+//   - inbound_user.sub_token  订阅输出按线路过滤时拿它匹配(见 SubscriptionByToken)
+//
+// 返回新的聚合 token,前端直接拿它拼新链接。
+func (s *Store) ResetUserSubTokens(ctx context.Context, userID int64) (string, error) {
+	token, err := randomSecret()
+	if err != nil {
+		return "", err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, s.bind("UPDATE "+s.quote("user")+" SET "+s.quote("all_sub_token")+" = ?, "+s.quote("updated_time")+" = ? WHERE "+s.quote("id")+" = ?"), token, time.Now().UnixMilli(), userID); err != nil {
+		return "", err
+	}
+	// 每条线路、每个协议授权各自一个 token,不能重复用同一个
+	for _, table := range []string{"inbound_line", "inbound_user"} {
+		rows, err := tx.QueryContext(ctx, s.bind("SELECT "+s.quote("id")+" FROM "+s.quote(table)+" WHERE "+s.quote("user_id")+" = ?"), userID)
+		if err != nil {
+			return "", err
+		}
+		ids := make([]int64, 0)
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return "", err
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return "", err
+		}
+		for _, id := range ids {
+			next, err := randomSecret()
+			if err != nil {
+				return "", err
+			}
+			if _, err := tx.ExecContext(ctx, s.bind("UPDATE "+s.quote(table)+" SET "+s.quote("sub_token")+" = ? WHERE "+s.quote("id")+" = ?"), next, id); err != nil {
+				return "", err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
 func (s *Store) UserCleanupCommands(ctx context.Context, userID int64) ([]CleanupCommand, error) {
 	query := "SELECT f." + s.quote("id") + ", ut." + s.quote("id") + ", t." + s.quote("type") + ", t." + s.quote("in_node_id") + ", t." + s.quote("out_node_id") +
 		" FROM " + s.quote("forward") + " f JOIN " + s.quote("tunnel") + " t ON f." + s.quote("tunnel_id") + " = t." + s.quote("id") +

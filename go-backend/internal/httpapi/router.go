@@ -44,6 +44,7 @@ type DataStore interface {
 	UpdateUsernamePassword(context.Context, int64, string, string) error
 	ResetUserFlow(context.Context, int64) (bool, error)
 	ResetUserTunnelFlow(context.Context, int64) (bool, error)
+	ResetUserSubTokens(context.Context, int64) (string, error)
 	UserCleanupCommands(context.Context, int64) ([]store.CleanupCommand, error)
 	DeleteUserCascade(context.Context, int64) error
 	UserPackage(context.Context, int64) (store.UserPackage, error)
@@ -190,6 +191,7 @@ func New(dependencies Dependencies) http.Handler {
 			authenticated.Get("/payment/orders", api.myPaymentOrders)
 			authenticated.Get("/payment/orders/{orderNo}", api.paymentOrder)
 			authenticated.Post("/inbound/my-lines", api.myInboundLines)
+			authenticated.Post("/inbound/reset-sub-token", api.resetMySubToken)
 
 			authenticated.Group(func(admin chi.Router) {
 				admin.Use(requireAdmin)
