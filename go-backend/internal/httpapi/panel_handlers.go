@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ziyue67/tms/go-backend/internal/paneldefaults"
 	"github.com/ziyue67/tms/go-backend/internal/store"
 )
 
@@ -220,23 +221,35 @@ func errString(err error) string {
 
 // ---------- 订阅模板 ----------
 
+// templateClients 模板的客户端类型 —— 与前端模板管理页的标签页一一对应。
+var templateClients = map[string]bool{"clash": true, "surge": true, "loon": true, "quanx": true, "singbox": true}
+
 func validateTemplateInput(input *store.TemplateInput) string {
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" || len(input.Name) > 128 {
 		return "模板名不能为空且最长 128"
 	}
+	input.Client = strings.ToLower(strings.TrimSpace(input.Client))
+	if !templateClients[input.Client] {
+		input.Client = "clash"
+	}
 	input.Version = strings.ToLower(strings.TrimSpace(input.Version))
 	if input.Version != "v2" && input.Version != "v3" {
 		input.Version = "v3"
+	}
+	if input.Visible != 0 {
+		input.Visible = 1
 	}
 	if len(input.Content) > 4<<20 {
 		return "模板内容超过 4MiB 上限"
 	}
 	if input.Version == "v3" && strings.TrimSpace(input.Content) != "" {
-		// v3 是 JSON;只做能解析校验,不约束 schema —— 面板允许自由编辑。
-		var probe map[string]any
-		if err := json.Unmarshal([]byte(input.Content), &probe); err != nil {
-			return "v3 模板内容必须是合法 JSON: " + err.Error()
+		// v3 是结构化骨架:clash 允许 JSON / YAML 文本,sing-box 必须是 JSON。
+		if input.Client == "singbox" {
+			var probe map[string]any
+			if err := json.Unmarshal([]byte(input.Content), &probe); err != nil {
+				return "sing-box 模板必须是合法 JSON: " + err.Error()
+			}
 		}
 	}
 	input.Remark = strings.TrimSpace(input.Remark)
@@ -317,6 +330,51 @@ func (a *API) panelTemplateDelete(w http.ResponseWriter, r *http.Request) {
 	writeResponse(w, OK(true))
 }
 
+// panelTemplateSetDefault 行内「★」:切换默认模板。默认模板全局只有一个。
+func (a *API) panelTemplateSetDefault(w http.ResponseWriter, r *http.Request) {
+	var req panelIDRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if _, err := a.store.SubscribeTemplateByID(r.Context(), req.ID); err != nil {
+		writePanelError(w, "模板不存在")
+		return
+	}
+	if err := a.store.SetSubscribeTemplateDefault(r.Context(), req.ID); err != nil {
+		writePanelError(w, "设置默认模板失败: "+err.Error())
+		return
+	}
+	writeResponse(w, OK(true))
+}
+
+// panelTemplateReset 行内「刷新」:把内置模板的内容恢复成出厂版本。
+// 只对 builtin=1 的模板开放,自建模板没有出厂内容可回滚。
+func (a *API) panelTemplateReset(w http.ResponseWriter, r *http.Request) {
+	var req panelIDRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	item, err := a.store.SubscribeTemplateByID(r.Context(), req.ID)
+	if err != nil {
+		writePanelError(w, "模板不存在")
+		return
+	}
+	if item.Builtin != 1 {
+		writePanelError(w, "只有内置模板支持恢复出厂内容")
+		return
+	}
+	builtin, ok := paneldefaults.TemplateByName(item.Name)
+	if !ok {
+		writePanelError(w, "内置模板库里找不到「" + item.Name + "」")
+		return
+	}
+	if err := a.store.ResetSubscribeTemplateContent(r.Context(), item.ID, builtin.Content); err != nil {
+		writePanelError(w, "恢复失败: "+err.Error())
+		return
+	}
+	writeResponse(w, OK(true))
+}
+
 // ---------- 订阅链接 ----------
 
 var linkFormats = map[string]bool{"clash": true, "v2ray": true, "singbox": true}
@@ -331,6 +389,10 @@ func validateLinkInput(input *store.LinkInput) string {
 		input.Format = "clash"
 	}
 	input.RulesetIDs = store.NormalizeRulesetIDs(input.RulesetIDs)
+	input.NodeIDs = store.NormalizeNodeIDs(input.NodeIDs)
+	if len(input.NodeIDs) > 3800 {
+		return "选中的节点太多,分几条订阅链接吧"
+	}
 	return ""
 }
 
@@ -416,9 +478,9 @@ func (a *API) loadPanelSubscription(w http.ResponseWriter, r *http.Request) (sto
 		http.Error(w, "订阅链接无效或已过期", http.StatusNotFound)
 		return link, store.SubscriptionOutput{}, false
 	}
-	output, err := a.store.SubscriptionByToken(r.Context(), link.Token)
-	if err != nil || output.UserID == 0 || !output.Usable {
-		http.Error(w, "订阅关联的账号不可用", http.StatusForbidden)
+	output, ok := a.panelOutputFor(r.Context(), link)
+	if !ok {
+		http.Error(w, "这条订阅链接没有可用节点", http.StatusForbidden)
 		return link, output, false
 	}
 	if err := a.store.BumpSubscribeLinkVisits(r.Context(), link.ID); err != nil {
@@ -428,6 +490,61 @@ func (a *API) loadPanelSubscription(w http.ResponseWriter, r *http.Request) (sto
 	return link, output, true
 }
 
+// panelOutputFor 决定这条订阅链接输出哪些节点。
+//
+//   - 带了 node_ids(新建订阅时从「节点管理」里挑的):直接用这些 custom_node 渲染,
+//     不再依赖某个车友的 token —— 之前面板链接拿自己的 token 去当车友 token 查,
+//     查不到就 403,链接等于建了不能用;
+//   - 老链接(没有 node_ids):沿用「借用车友 all_sub_token / 线路 sub_token」的老路径。
+func (a *API) panelOutputFor(ctx context.Context, link store.SubscribeLink) (store.SubscriptionOutput, bool) {
+	if ids := parsePanelNodeIDs(link.NodeIDs); len(ids) > 0 {
+		nodes, err := a.store.PanelNodesByIDs(ctx, ids)
+		if err != nil || len(nodes) == 0 {
+			return store.SubscriptionOutput{}, false
+		}
+		output := store.SubscriptionOutput{
+			Usable:       true,
+			Entries:      []store.SubscriptionEntry{},
+			CustomLinks:  make([]string, 0, len(nodes)),
+			CustomParsed: make([]map[string]any, 0, len(nodes)),
+		}
+		for _, node := range nodes {
+			if node.RawLink != "" {
+				output.CustomLinks = append(output.CustomLinks, node.RawLink)
+			}
+			parsed := node.Parsed
+			if parsed == nil {
+				parsed = map[string]any{}
+			}
+			if _, ok := parsed["protocol"]; !ok {
+				parsed["protocol"] = node.Protocol
+			}
+			if _, ok := parsed["name"]; !ok || parsed["name"] == "" {
+				parsed["name"] = node.Name
+			}
+			output.CustomParsed = append(output.CustomParsed, parsed)
+		}
+		return output, true
+	}
+	output, err := a.store.SubscriptionByToken(ctx, link.Token)
+	if err != nil || output.UserID == 0 || !output.Usable {
+		return output, false
+	}
+	return output, true
+}
+
+// parsePanelNodeIDs 把 "1,2,3" 解析成 id 列表,非法项直接丢。
+func parsePanelNodeIDs(raw string) []int64 {
+	ids := []int64{}
+	for _, part := range strings.Split(raw, ",") {
+		id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 func (a *API) panelSubscription(w http.ResponseWriter, r *http.Request) {
 	link, output, ok := a.loadPanelSubscription(w, r)
 	if !ok {
@@ -435,8 +552,7 @@ func (a *API) panelSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 	links := buildSubscriptionLinks(output)
 	proxies := buildClashProxies(output)
-	switch link.Format {
-	case "v2ray":
+	if link.Format == "v2ray" {
 		if len(links) == 0 {
 			http.Error(w, "No available subscription nodes", http.StatusNotFound)
 			return
@@ -444,16 +560,23 @@ func (a *API) panelSubscription(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Subscription-Userinfo", subscriptionUserinfo(output))
 		_, _ = w.Write([]byte(strings.Join(links, "\n")))
-	default: // clash
-		if len(proxies) == 0 {
-			http.Error(w, "No available subscription nodes", http.StatusNotFound)
-			return
-		}
-		yaml := renderPanelClashYAML(r.Context(), a.store, link, proxies)
-		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
-		w.Header().Set("Subscription-Userinfo", subscriptionUserinfo(output))
-		_, _ = w.Write([]byte(yaml))
+		return
 	}
+	if len(proxies) == 0 {
+		http.Error(w, "No available subscription nodes", http.StatusNotFound)
+		return
+	}
+	if link.Format == "singbox" {
+		body := renderPanelSingboxJSON(r.Context(), a.store, link, proxies)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Subscription-Userinfo", subscriptionUserinfo(output))
+		_, _ = w.Write([]byte(body))
+		return
+	}
+	yaml := renderPanelClashYAML(r.Context(), a.store, link, proxies)
+	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+	w.Header().Set("Subscription-Userinfo", subscriptionUserinfo(output))
+	_, _ = w.Write([]byte(yaml))
 }
 
 // subscriptionUserinfo 流量头,客户端(Shadowrocket 等)拿来显示用量。
@@ -461,23 +584,45 @@ func subscriptionUserinfo(output store.SubscriptionOutput) string {
 	return fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", output.Upload, output.Download, output.Total, output.Expires)
 }
 
+// panelTemplateSnapshot 渲染时用的模板快照。
+type panelTemplateSnapshot struct {
+	Content string
+	Client  string
+	Version string
+}
+
+// panelTemplateFor 取这条订阅链接该用的模板:指定了就用指定的,没指定用默认模板,
+// 都没有返回 nil(渲染走内置兜底)。
+func panelTemplateFor(ctx context.Context, s panelStore, link store.SubscribeLink) *panelTemplateSnapshot {
+	load := func(id int64) *panelTemplateSnapshot {
+		if id <= 0 {
+			return nil
+		}
+		item, err := s.SubscribeTemplateByID(ctx, id)
+		if err != nil {
+			return nil
+		}
+		return &panelTemplateSnapshot{Content: item.Content, Client: item.Client, Version: item.Version}
+	}
+	if snapshot := load(link.TemplateID); snapshot != nil {
+		return snapshot
+	}
+	if id, err := s.DefaultTemplateID(ctx); err == nil {
+		return load(id)
+	}
+	return nil
+}
+
 // renderPanelClashYAML 用订阅模板渲染 clash 配置。模板缺失/损坏时退回内置默认骨架,
 // 订阅永远能出东西 —— 空配置比报错对车友友好。
+//
+// 支持两种模板写法:
+//   - JSON 骨架(结构化):解析后塞 proxies / proxy-groups / rules;
+//   - YAML 文本(妙妙屋 rule_templates 风格):文本级替换 proxies: null 与
+//     __PROXY_NODES__ / __PROXY_PROVIDERS__ 占位符 —— 不引入 YAML 依赖也能
+//     原样保留上游模板里的 DNS、rule-providers 等高级段落。
 func renderPanelClashYAML(ctx context.Context, s panelStore, link store.SubscribeLink, proxies []map[string]any) string {
-	type tf struct {
-		Content string
-		Version string
-	}
-	var template *tf
-	if link.TemplateID > 0 {
-		if t, err := s.SubscribeTemplateByID(ctx, link.TemplateID); err == nil {
-			template = &tf{Content: t.Content, Version: t.Version}
-		}
-	} else if id, err := s.DefaultTemplateID(ctx); err == nil && id > 0 {
-		if t, err := s.SubscribeTemplateByID(ctx, id); err == nil {
-			template = &tf{Content: t.Content, Version: t.Version}
-		}
-	}
+	template := panelTemplateFor(ctx, s, link)
 	names := make([]string, 0, len(proxies))
 	for _, p := range proxies {
 		names = append(names, fmt.Sprint(p["name"]))
@@ -485,34 +630,32 @@ func renderPanelClashYAML(ctx context.Context, s panelStore, link store.Subscrib
 	if template == nil || strings.TrimSpace(template.Content) == "" || template.Version != "v3" {
 		return defaultPanelClashYAML(proxies, names)
 	}
-	var root map[string]any
-	if err := json.Unmarshal([]byte(template.Content), &root); err != nil {
+	if template.Client != "" && template.Client != "clash" {
+		// 绑了 Surge/sing-box 模板却要 clash 输出:退回默认骨架,别硬套。
 		return defaultPanelClashYAML(proxies, names)
 	}
-	applyPanelTemplate(root, link, proxies, names)
-	encoded, err := json.MarshalIndent(root, "", "  ")
-	if err != nil {
-		return defaultPanelClashYAML(proxies, names)
+	ruleLines := collectRulesetRuleLines(link)
+	if json.Valid([]byte(template.Content)) {
+		var root map[string]any
+		if err := json.Unmarshal([]byte(template.Content), &root); err != nil {
+			return defaultPanelClashYAML(proxies, names)
+		}
+		applyPanelTemplate(root, proxies, names, ruleLines)
+		encoded, err := json.MarshalIndent(root, "", "  ")
+		if err != nil {
+			return defaultPanelClashYAML(proxies, names)
+		}
+		return string(encoded)
 	}
-	return string(encoded)
+	return renderClashTextTemplate(template.Content, proxies, names, ruleLines)
 }
 
-// applyPanelTemplate 把节点与规则集挂进模板骨架:
-//   - 模板里没有 proxies/proxy-groups 就补默认组;
-//   - ruleset_ids 指到的规则集替换模板 rules 数组里的 $RULESET$ 占位符(按顺序)。
-func applyPanelTemplate(root map[string]any, link store.SubscribeLink, proxies []map[string]any, names []string) {
-	root["proxies"] = proxies
-	if _, ok := root["proxy-groups"]; !ok {
-		root["proxy-groups"] = []map[string]any{
-			{"name": "节点选择", "type": "select", "proxies": append([]string{"自动选择"}, names...)},
-			{"name": "自动选择", "type": "url-test", "proxies": names, "url": "http://www.gstatic.com/generate_204", "interval": 300, "tolerance": 50},
-			{"name": "漏网之鱼", "type": "select", "proxies": []string{"节点选择", "DIRECT"}},
-		}
+// collectRulesetRuleLines 把订阅链接绑定的规则集展开成一行行 clash 规则。
+func collectRulesetRuleLines(link store.SubscribeLink) []string {
+	if strings.TrimSpace(link.RulesetIDs) == "" {
+		return nil
 	}
-	if link.RulesetIDs == "" {
-		return
-	}
-	ruleLines := []string{}
+	lines := []string{}
 	for _, idStr := range strings.Split(link.RulesetIDs, ",") {
 		id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
 		if err != nil {
@@ -524,15 +667,91 @@ func applyPanelTemplate(root map[string]any, link store.SubscribeLink, proxies [
 		}
 		for _, line := range strings.Split(content, "\n") {
 			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				ruleLines = append(ruleLines, line)
+			if line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, ";") {
+				lines = append(lines, line)
 			}
+		}
+	}
+	return lines
+}
+
+var (
+	yamlProxiesKey = regexp.MustCompile(`^proxies:\s*(\[\]|null)?\s*$`)
+	yamlNodeLine   = regexp.MustCompile(`^(\s*)-\s*__PROXY_NODES__\s*$`)
+	yamlProvLine   = regexp.MustCompile(`^\s*-\s*__PROXY_PROVIDERS__\s*$`)
+)
+
+// renderClashTextTemplate YAML 文本模板的注入渲染。
+//
+//   - 顶层 `proxies:` 段落整段换成真实节点(没有这个键就在末尾补一段);
+//   - 策略组 proxies 里的 `- __PROXY_NODES__` 展开成每个节点名;
+//   - `- __PROXY_PROVIDERS__` 直接删掉(面板不提供 proxy-providers);
+//   - 规则集行插到第一条 MATCH 之前,兜底规则永远垫底。
+func renderClashTextTemplate(template string, proxies []map[string]any, names []string, ruleLines []string) string {
+	source := strings.Split(strings.ReplaceAll(template, "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(source)+len(names)+len(ruleLines))
+	proxiesDone, rulesDone := false, false
+	for _, line := range source {
+		trimmed := strings.TrimSpace(line)
+		if !proxiesDone && yamlProxiesKey.MatchString(line) {
+			out = append(out, "proxies:")
+			for _, proxy := range proxies {
+				out = append(out, "  - "+jsonLine(proxy))
+			}
+			proxiesDone = true
+			continue
+		}
+		if match := yamlNodeLine.FindStringSubmatch(line); match != nil {
+			for _, name := range names {
+				out = append(out, match[1]+"- "+jsonLine(name))
+			}
+			continue
+		}
+		if yamlProvLine.MatchString(line) {
+			continue
+		}
+		if !rulesDone && len(ruleLines) > 0 && strings.HasPrefix(strings.ToUpper(trimmed), "- MATCH,") {
+			indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
+			for _, rule := range ruleLines {
+				out = append(out, indent+"- "+rule)
+			}
+			rulesDone = true
+		}
+		out = append(out, line)
+	}
+	if !proxiesDone {
+		out = append(out, "proxies:")
+		for _, proxy := range proxies {
+			out = append(out, "  - "+jsonLine(proxy))
+		}
+	}
+	return strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
+}
+
+// jsonLine 把任意值序列化成一行 JSON —— JSON 是合法 YAML,可以直接当 YAML 节点用。
+func jsonLine(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "null"
+	}
+	return string(encoded)
+}
+
+// applyPanelTemplate 把节点与规则集挂进 JSON 骨架:
+//   - 模板里没有 proxy-groups 就补默认组;
+//   - 规则集行插到 rules 数组里第一条 MATCH 之前。
+func applyPanelTemplate(root map[string]any, proxies []map[string]any, names []string, ruleLines []string) {
+	root["proxies"] = proxies
+	if _, ok := root["proxy-groups"]; !ok {
+		root["proxy-groups"] = []map[string]any{
+			{"name": "节点选择", "type": "select", "proxies": append([]string{"自动选择"}, names...)},
+			{"name": "自动选择", "type": "url-test", "proxies": names, "url": "http://www.gstatic.com/generate_204", "interval": 300, "tolerance": 50},
+			{"name": "漏网之鱼", "type": "select", "proxies": []string{"节点选择", "DIRECT"}},
 		}
 	}
 	if len(ruleLines) == 0 {
 		return
 	}
-	// 规则集行替换 MATCH 兜底行之前的位置:规则集优先,兜底垫底。
 	rules, _ := root["rules"].([]any)
 	final := []any{}
 	matched := false
@@ -589,6 +808,173 @@ func defaultPanelClashYAML(proxies []map[string]any, names []string) string {
 	}
 	encoded, _ := json.MarshalIndent(root, "", "  ")
 	return string(encoded)
+}
+
+// renderPanelSingboxJSON sing-box 输出。模板优先用订阅链接绑定的 sing-box 模板,
+// 没绑就用内置 default__singbox.json —— 选了 sing-box 格式却吐 clash 配置是最坑的,
+// 客户端的报错根本看不出问题在哪。
+func renderPanelSingboxJSON(ctx context.Context, s panelStore, link store.SubscribeLink, proxies []map[string]any) string {
+	template := panelTemplateFor(ctx, s, link)
+	content := ""
+	if template != nil && template.Client == "singbox" && strings.TrimSpace(template.Content) != "" {
+		content = template.Content
+	} else if builtin, ok := paneldefaults.TemplateByName("default__singbox.json"); ok {
+		content = builtin.Content
+	}
+	outbounds, tags := singboxOutbounds(proxies)
+	var root any
+	if err := json.Unmarshal([]byte(content), &root); err != nil {
+		root = map[string]any{"outbounds": []any{}}
+	}
+	root = expandSingboxPlaceholders(root, outbounds, tags)
+	encoded, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return content
+	}
+	return string(encoded)
+}
+
+// expandSingboxPlaceholders 递归替换模板里的数组占位符:
+// "__PROXY_OUTBOUNDS__" → 全部节点出站;"__PROXY_TAGS__" → 节点 tag 列表。
+func expandSingboxPlaceholders(node any, outbounds []any, tags []any) any {
+	switch value := node.(type) {
+	case []any:
+		out := make([]any, 0, len(value))
+		for _, item := range value {
+			if placeholder, ok := item.(string); ok {
+				switch placeholder {
+				case "__PROXY_OUTBOUNDS__":
+					out = append(out, outbounds...)
+					continue
+				case "__PROXY_TAGS__":
+					out = append(out, tags...)
+					continue
+				}
+			}
+			out = append(out, expandSingboxPlaceholders(item, outbounds, tags))
+		}
+		return out
+	case map[string]any:
+		for key, item := range value {
+			value[key] = expandSingboxPlaceholders(item, outbounds, tags)
+		}
+		return value
+	default:
+		return node
+	}
+}
+
+// singboxOutbounds 把 clash 代理映射转成 sing-box 出站,同时返回 tag 列表给
+// selector / urltest 组用。转不了的类型直接跳过(宁可少个节点,也不要吐坏配置)。
+func singboxOutbounds(proxies []map[string]any) ([]any, []any) {
+	outbounds := make([]any, 0, len(proxies)+1)
+	tags := make([]any, 0, len(proxies))
+	for _, proxy := range proxies {
+		outbound, ok := singboxOutbound(proxy)
+		if !ok {
+			continue
+		}
+		outbounds = append(outbounds, outbound)
+		tags = append(tags, outbound["tag"])
+	}
+	if len(outbounds) == 0 {
+		outbounds = append(outbounds, map[string]any{"type": "direct", "tag": "direct"})
+	}
+	return outbounds, tags
+}
+
+func singboxOutbound(proxy map[string]any) (map[string]any, bool) {
+	base := map[string]any{
+		"tag":         fmt.Sprint(proxy["name"]),
+		"server":      fmt.Sprint(proxy["server"]),
+		"server_port": anyInt(proxy["port"]),
+	}
+	switch strings.ToLower(fmt.Sprint(proxy["type"])) {
+	case "ss":
+		base["type"] = "shadowsocks"
+		base["method"] = proxy["cipher"]
+		base["password"] = proxy["password"]
+	case "vmess":
+		base["type"] = "vmess"
+		base["uuid"] = proxy["uuid"]
+		base["security"] = "auto"
+		base["alter_id"] = anyInt(proxy["alterId"])
+		if tls, _ := proxy["tls"].(bool); tls {
+			base["tls"] = singboxTLS(proxy)
+		}
+	case "vless":
+		base["type"] = "vless"
+		base["uuid"] = proxy["uuid"]
+		if flow, ok := proxy["flow"].(string); ok && flow != "" {
+			base["flow"] = flow
+		}
+		base["tls"] = singboxTLS(proxy)
+	case "trojan":
+		base["type"] = "trojan"
+		base["password"] = proxy["password"]
+		base["tls"] = singboxTLS(proxy)
+	case "hysteria2":
+		base["type"] = "hysteria2"
+		base["password"] = proxy["password"]
+		base["tls"] = singboxTLS(proxy)
+	case "tuic":
+		base["type"] = "tuic"
+		base["uuid"] = proxy["uuid"]
+		base["password"] = proxy["password"]
+		base["congestion_control"] = "bbr"
+		base["udp_relay_mode"] = "native"
+		base["tls"] = singboxTLS(proxy)
+	case "anytls":
+		base["type"] = "anytls"
+		base["password"] = proxy["password"]
+		base["tls"] = singboxTLS(proxy)
+	default:
+		return nil, false
+	}
+	return base, true
+}
+
+func singboxTLS(proxy map[string]any) map[string]any {
+	tls := map[string]any{"enabled": true}
+	for _, key := range []string{"sni", "servername"} {
+		if name, ok := proxy[key].(string); ok && name != "" {
+			tls["server_name"] = name
+			break
+		}
+	}
+	if insecure, ok := proxy["skip-cert-verify"].(bool); ok && insecure {
+		tls["insecure"] = true
+	}
+	if fingerprint, ok := proxy["client-fingerprint"].(string); ok && fingerprint != "" {
+		tls["utls"] = map[string]any{"enabled": true, "fingerprint": fingerprint}
+	}
+	if reality, ok := proxy["reality-opts"].(map[string]any); ok {
+		opts := map[string]any{"enabled": true}
+		if key, ok := reality["public-key"].(string); ok && key != "" {
+			opts["public_key"] = key
+		}
+		if short, ok := reality["short-id"].(string); ok && short != "" {
+			opts["short_id"] = short
+		}
+		tls["reality"] = opts
+	}
+	return tls
+}
+
+func anyInt(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case string:
+		parsed, _ := strconv.Atoi(typed)
+		return parsed
+	default:
+		return 0
+	}
 }
 
 // panelRulesetFile 规则集公开下载:/open_api/panel-ruleset/{name}。

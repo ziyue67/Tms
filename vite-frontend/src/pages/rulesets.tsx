@@ -4,11 +4,26 @@ import { Button } from "@heroui/button";
 import { Input, Textarea } from "@heroui/input";
 import { Chip } from "@heroui/chip";
 import { Select, SelectItem } from "@heroui/select";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
+import {
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+} from "@heroui/table";
+import {
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  useDisclosure,
+} from "@heroui/modal";
 import { Spinner } from "@heroui/spinner";
 import toast from "react-hot-toast";
 import PageWrapper from "@/components/page-wrapper";
+import { PlusIcon } from "@/components/icons";
 import {
   getPanelRulesets,
   getPanelRuleset,
@@ -32,7 +47,13 @@ export default function RulesetsPage() {
   const [editing, setEditing] = useState<PanelRuleset | null>(null);
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: "", displayName: "", source: "manual" as "manual" | "remote", remoteUrl: "", refreshMinutes: 30 });
+  const [form, setForm] = useState({
+    name: "",
+    displayName: "",
+    source: "manual" as "manual" | "remote",
+    remoteUrl: "",
+    refreshMinutes: 30,
+  });
 
   const load = useCallback(async () => {
     try {
@@ -51,13 +72,25 @@ export default function RulesetsPage() {
   const openCreate = () => {
     setEditing(null);
     setContent("");
-    setForm({ name: "", displayName: "", source: "manual", remoteUrl: "", refreshMinutes: 30 });
+    setForm({
+      name: "",
+      displayName: "",
+      source: "manual",
+      remoteUrl: "",
+      refreshMinutes: 30,
+    });
     onOpen();
   };
 
   const openEdit = async (item: PanelRuleset) => {
     setEditing(item);
-    setForm({ name: item.name, displayName: item.displayName, source: item.source, remoteUrl: item.remoteUrl, refreshMinutes: item.refreshMinutes });
+    setForm({
+      name: item.name,
+      displayName: item.displayName,
+      source: item.source,
+      remoteUrl: item.remoteUrl,
+      refreshMinutes: item.refreshMinutes,
+    });
     setContent("");
     onOpen();
     try {
@@ -71,13 +104,15 @@ export default function RulesetsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = { ...form };
-      const res = editing ? await updatePanelRuleset(editing.id, payload) : await createPanelRuleset(payload);
+      // 手动来源的内容必须跟着保存一起提交,否则新建完内容就丢了。
+      const payload = {
+        ...form,
+        content: form.source === "manual" ? content : undefined,
+      };
+      const res = editing
+        ? await updatePanelRuleset(editing.id, payload)
+        : await createPanelRuleset(payload);
       if (res.code === 0) {
-        // 内容只在创建时提交;编辑走单独保存,避免大文本反复上传
-        if (!editing && payload.source === "manual" && content) {
-          await updatePanelRuleset(res.data.id, { ...payload });
-        }
         toast.success(editing ? "已更新" : "已创建");
         onClose();
         await load();
@@ -109,7 +144,12 @@ export default function RulesetsPage() {
   };
 
   const handleDelete = async (item: PanelRuleset) => {
-    if (!window.confirm(`删除规则集「${item.displayName || item.name}」?引用它的订阅会拿不到该文件。`)) return;
+    if (
+      !window.confirm(
+        `删除规则集「${item.displayName || item.name}」?引用它的订阅会拿不到该文件。`,
+      )
+    )
+      return;
     try {
       const res = await deletePanelRuleset(item.id);
       if (res.code === 0) {
@@ -138,7 +178,8 @@ export default function RulesetsPage() {
     }
   };
 
-  const publicUrl = (name: string) => `${window.location.origin}/api/v1/open_api/panel-ruleset/${name}`;
+  const publicUrl = (name: string) =>
+    `${window.location.origin}/api/v1/open_api/panel-ruleset/${name}`;
 
   const copyUrl = async (name: string) => {
     try {
@@ -150,18 +191,38 @@ export default function RulesetsPage() {
   };
 
   return (
-    <PageWrapper title="规则集" description="托管 clash rule-providers 规则文件,远程来源由主控定时抓取,订阅模板按规则集引用。">
-      <div className="flex justify-between items-center mb-4">
-        <div className="text-sm text-default-500">共 {items.length} 个规则集</div>
-        <Button color="primary" onPress={openCreate}>新建规则集</Button>
-      </div>
+    <PageWrapper
+      title="规则集"
+      description="订阅按规则集往模板里插规则行:内容请填带策略的完整规则(TYPE,value,策略)。手动来源直接编辑;远程来源可点「刷新」抓取,注意上游那种只有域名、没有策略的清单不能直接内联。"
+    >
+      <Card className="mb-4">
+        <CardBody className="py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="mr-auto whitespace-nowrap text-sm text-default-500">
+              共 {items.length} 个规则集
+            </div>
+            <Button
+              color="primary"
+              size="sm"
+              startContent={<PlusIcon size={18} />}
+              onPress={openCreate}
+            >
+              新建规则集
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
 
       <Card>
         <CardBody className="p-0">
           {loading ? (
-            <div className="flex justify-center py-16"><Spinner /></div>
+            <div className="flex justify-center py-16">
+              <Spinner />
+            </div>
           ) : items.length === 0 ? (
-            <div className="text-center text-default-500 py-16">还没有规则集。新建一个,然后在订阅模板里引用。</div>
+            <div className="text-center text-default-500 py-16">
+              还没有规则集。新建一个,然后在订阅模板里引用。
+            </div>
           ) : (
             <Table aria-label="规则集列表" removeWrapper>
               <TableHeader>
@@ -175,19 +236,35 @@ export default function RulesetsPage() {
                 {items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell>
-                      <div className="font-medium">{item.displayName || item.name}</div>
-                      <div className="text-xs text-default-400 font-mono">{item.name}</div>
+                      <div className="font-medium">
+                        {item.displayName || item.name}
+                      </div>
+                      <div className="text-xs text-default-400 font-mono">
+                        {item.name}
+                      </div>
                     </TableCell>
                     <TableCell>
-                      <Chip size="sm" variant="flat" color={item.source === "remote" ? "secondary" : "default"}>
-                        {item.source === "remote" ? `远程/${item.refreshMinutes}分` : "手动"}
+                      <Chip
+                        size="sm"
+                        variant="flat"
+                        color={
+                          item.source === "remote" ? "secondary" : "default"
+                        }
+                      >
+                        {item.source === "remote"
+                          ? `远程/${item.refreshMinutes}分`
+                          : "手动"}
                       </Chip>
                     </TableCell>
-                    <TableCell className="text-sm">{(item.size / 1024).toFixed(1)} KB</TableCell>
+                    <TableCell className="text-sm">
+                      {(item.size / 1024).toFixed(1)} KB
+                    </TableCell>
                     <TableCell className="text-xs">
                       {item.source === "remote" ? (
                         item.lastFetchError ? (
-                          <span className="text-danger">{item.lastFetchError}</span>
+                          <span className="text-danger">
+                            {item.lastFetchError}
+                          </span>
                         ) : item.lastFetchAt ? (
                           new Date(item.lastFetchAt).toLocaleString()
                         ) : (
@@ -199,12 +276,38 @@ export default function RulesetsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button size="sm" variant="light" onPress={() => openEdit(item)}>编辑</Button>
-                        <Button size="sm" variant="light" onPress={() => copyUrl(item.name)}>复制地址</Button>
+                        <Button
+                          size="sm"
+                          variant="light"
+                          onPress={() => openEdit(item)}
+                        >
+                          编辑
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="light"
+                          onPress={() => copyUrl(item.name)}
+                        >
+                          复制地址
+                        </Button>
                         {item.source === "remote" && (
-                          <Button size="sm" variant="light" color="secondary" onPress={() => handleRefresh(item)}>刷新</Button>
+                          <Button
+                            size="sm"
+                            variant="light"
+                            color="secondary"
+                            onPress={() => handleRefresh(item)}
+                          >
+                            刷新
+                          </Button>
                         )}
-                        <Button size="sm" variant="light" color="danger" onPress={() => handleDelete(item)}>删除</Button>
+                        <Button
+                          size="sm"
+                          variant="light"
+                          color="danger"
+                          onPress={() => handleDelete(item)}
+                        >
+                          删除
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -215,7 +318,12 @@ export default function RulesetsPage() {
         </CardBody>
       </Card>
 
-      <Modal isOpen={isOpen} onClose={onClose} size="3xl" scrollBehavior="inside">
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        size="3xl"
+        scrollBehavior="inside"
+      >
         <ModalContent>
           <ModalHeader>{editing ? "编辑规则集" : "新建规则集"}</ModalHeader>
           <ModalBody>
@@ -227,19 +335,42 @@ export default function RulesetsPage() {
                 onValueChange={(v) => setForm({ ...form, name: v })}
                 description="字母数字._-,以字母数字开头;名字公开可下载,建议带随机后缀防猜"
               />
-              <Input label="显示名" placeholder="可选" value={form.displayName} onValueChange={(v) => setForm({ ...form, displayName: v })} />
+              <Input
+                label="显示名"
+                placeholder="可选"
+                value={form.displayName}
+                onValueChange={(v) => setForm({ ...form, displayName: v })}
+              />
               <Select
                 label="来源"
                 selectedKeys={[form.source]}
-                onSelectionChange={(keys) => setForm({ ...form, source: Array.from(keys)[0] as "manual" | "remote" })}
+                onSelectionChange={(keys) =>
+                  setForm({
+                    ...form,
+                    source: Array.from(keys)[0] as "manual" | "remote",
+                  })
+                }
               >
                 <SelectItem key="manual">手动(面板编辑)</SelectItem>
                 <SelectItem key="remote">远程(定时抓取)</SelectItem>
               </Select>
               {form.source === "remote" ? (
                 <div className="grid grid-cols-3 gap-3 md:col-span-1">
-                  <Input className="col-span-2" label="远程地址" value={form.remoteUrl} onValueChange={(v) => setForm({ ...form, remoteUrl: v })} placeholder="https://..." />
-                  <Input label="间隔(分)" type="number" value={String(form.refreshMinutes)} onValueChange={(v) => setForm({ ...form, refreshMinutes: Number(v) || 0 })} />
+                  <Input
+                    className="col-span-2"
+                    label="远程地址"
+                    value={form.remoteUrl}
+                    onValueChange={(v) => setForm({ ...form, remoteUrl: v })}
+                    placeholder="https://..."
+                  />
+                  <Input
+                    label="间隔(分)"
+                    type="number"
+                    value={String(form.refreshMinutes)}
+                    onValueChange={(v) =>
+                      setForm({ ...form, refreshMinutes: Number(v) || 0 })
+                    }
+                  />
                 </div>
               ) : (
                 <Textarea
@@ -253,21 +384,46 @@ export default function RulesetsPage() {
               )}
             </div>
             {editing && (
-              <Textarea label="规则内容(编辑已有)" minRows={12} value={content} onValueChange={setContent} className="md:col-span-2" />
+              <Textarea
+                label="规则内容(编辑已有)"
+                minRows={12}
+                value={content}
+                onValueChange={setContent}
+                className="md:col-span-2"
+              />
             )}
             {editing && (
-              <div className="text-xs text-default-400">公开下载地址:{publicUrl(editing.name)}</div>
+              <div className="text-xs text-default-400">
+                公开下载地址:{publicUrl(editing.name)}
+              </div>
             )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={onClose}>取消</Button>
+            <Button variant="light" onPress={onClose}>
+              取消
+            </Button>
             {editing ? (
               <>
-                <Button color="primary" variant="flat" onPress={handleSave} isLoading={saving}>保存信息</Button>
-                <Button color="primary" onPress={handleSaveContent} isLoading={saving}>保存内容</Button>
+                <Button
+                  color="primary"
+                  variant="flat"
+                  onPress={handleSave}
+                  isLoading={saving}
+                >
+                  保存信息
+                </Button>
+                <Button
+                  color="primary"
+                  onPress={handleSaveContent}
+                  isLoading={saving}
+                >
+                  保存内容
+                </Button>
               </>
             ) : (
-              <Button color="primary" onPress={handleSave} isLoading={saving}>创建</Button>
+              <Button color="primary" onPress={handleSave} isLoading={saving}>
+                创建
+              </Button>
             )}
           </ModalFooter>
         </ModalContent>

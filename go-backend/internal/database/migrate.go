@@ -21,6 +21,13 @@ func Migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 		{"user", "all_sub_token", "VARCHAR(64) NULL"}, {"user", "email", "VARCHAR(190) NULL"},
 		{"inbound", "landing_id", "BIGINT NULL"}, {"subscription_plan", "reset_quota", "INTEGER NOT NULL DEFAULT 1"},
 		{"redeem_code", "code_value", "VARCHAR(64) NULL"}, {"custom_node", "visibility", "VARCHAR(12) NOT NULL DEFAULT 'global'"},
+		// 模板管理:客户端类型(面板按 Clash/Surge/Loon/Quan X/sing-box 分标签)、
+		// 用户可见性、是否内置(内置才能「恢复内置内容」)。
+		{"subscribe_template", "client", "VARCHAR(16) NOT NULL DEFAULT 'clash'"},
+		{"subscribe_template", "visible", "INTEGER NOT NULL DEFAULT 1"},
+		{"subscribe_template", "builtin", "INTEGER NOT NULL DEFAULT 0"},
+		// 订阅链接自带的节点集合(新建订阅时从节点管理里挑),逗号分隔的 custom_node.id。
+		{"subscribe_link", "node_ids", "VARCHAR(4000) NULL"},
 	} {
 		if err := m.addColumn(ctx, column); err != nil {
 			return err
@@ -208,9 +215,10 @@ func panelTables(dialect Dialect) map[string]string {
 	return map[string]string{
 		// 规则集(clash rule-providers 托管):name 是公开下载路径里的文件名,唯一。
 		"ruleset": fmt.Sprintf("(id %s PRIMARY KEY, name VARCHAR(128) NOT NULL UNIQUE, display_name VARCHAR(255) NOT NULL DEFAULT '', source VARCHAR(16) NOT NULL DEFAULT 'manual', remote_url TEXT, refresh_minutes INTEGER NOT NULL DEFAULT 0, content %s, last_fetch_at BIGINT, last_fetch_error VARCHAR(500) NOT NULL DEFAULT '', status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL)", id, textType),
-		// 订阅模板:V2(V1 文本模板)与 V3(mihomo 风格 JSON)共用一张表,version 区分。
-		"subscribe_template": fmt.Sprintf("(id %s PRIMARY KEY, name VARCHAR(128) NOT NULL, version VARCHAR(8) NOT NULL DEFAULT 'v3', is_default INTEGER NOT NULL DEFAULT 0, content %s, remark VARCHAR(255) NOT NULL DEFAULT '', status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL)", id, textType),
+		// 订阅模板:V2(V1 文本模板)与 V3(mihomo 风格 JSON)共用一张表,version 区分;
+		// client 是客户端类型(与面板模板管理的分标签一致),builtin=1 为内置模板。
+		"subscribe_template": fmt.Sprintf("(id %s PRIMARY KEY, name VARCHAR(128) NOT NULL, client VARCHAR(16) NOT NULL DEFAULT 'clash', version VARCHAR(8) NOT NULL DEFAULT 'v3', is_default INTEGER NOT NULL DEFAULT 0, visible INTEGER NOT NULL DEFAULT 1, builtin INTEGER NOT NULL DEFAULT 0, content %s, remark VARCHAR(255) NOT NULL DEFAULT '', status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL)", id, textType),
 		// 订阅链接:一条链接 = 一个 token + 输出格式 + 绑定的模板/规则集集合(逗号分隔 id)。
-		"subscribe_link": fmt.Sprintf("(id %s PRIMARY KEY, name VARCHAR(128) NOT NULL, token VARCHAR(64) NOT NULL UNIQUE, format VARCHAR(16) NOT NULL DEFAULT 'clash', template_id BIGINT, ruleset_ids VARCHAR(500) NOT NULL DEFAULT '', expire_at BIGINT NOT NULL DEFAULT 0, visit_count BIGINT NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL)", id),
+		"subscribe_link": fmt.Sprintf("(id %s PRIMARY KEY, name VARCHAR(128) NOT NULL, token VARCHAR(64) NOT NULL UNIQUE, format VARCHAR(16) NOT NULL DEFAULT 'clash', template_id BIGINT, ruleset_ids VARCHAR(500) NOT NULL DEFAULT '', node_ids VARCHAR(4000) NULL, expire_at BIGINT NOT NULL DEFAULT 0, visit_count BIGINT NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL)", id),
 	}
 }

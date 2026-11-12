@@ -16,6 +16,7 @@ import (
 	"github.com/ziyue67/tms/go-backend/internal/httpapi"
 	"github.com/ziyue67/tms/go-backend/internal/maintenance"
 	"github.com/ziyue67/tms/go-backend/internal/nodehub"
+	"github.com/ziyue67/tms/go-backend/internal/panelbootstrap"
 	"github.com/ziyue67/tms/go-backend/internal/payment"
 	"github.com/ziyue67/tms/go-backend/internal/store"
 	"github.com/ziyue67/tms/go-backend/internal/verification"
@@ -57,6 +58,12 @@ func main() {
 	}
 
 	repository := store.New(db, dialect)
+	// 内置模板/规则集播种:模板管理页开箱就有内容,不再是一张空表。
+	if seeded, err := panelbootstrap.Seed(startupCtx, repository); err != nil {
+		logger.Warn("内置模板播种失败", "error", err)
+	} else if seeded.TemplatesAdded > 0 || seeded.RulesetsAdded > 0 {
+		logger.Info("已写入内置模板/规则集", "templates", seeded.TemplatesAdded, "rulesets", seeded.RulesetsAdded, "defaultFixed", seeded.DefaultFixed)
+	}
 	tokens := auth.NewTokenService(cfg.JWTSecret, 90*24*time.Hour)
 	verificationService := verification.New(cfg.Auth, redisClient, repository, nil)
 	nodeHub := nodehub.New(repository, tokens, logger)
