@@ -249,6 +249,8 @@ export interface PanelLink {
   format: "clash" | "v2ray" | "singbox";
   templateId: number;
   rulesetIds: string;
+  /** 逗号分隔的 custom_node.id(64 位雪花 id,始终当字符串处理) */
+  nodeIds: string;
   expireAt: number;
   visitCount: number;
   status: number;
@@ -256,7 +258,15 @@ export interface PanelLink {
   updatedTime: number;
 }
 export const getPanelLinks = () => Network.post("/panel/link/list");
-export const createPanelLink = (data: { name: string; format: string; templateId?: number | string; rulesetIds?: string; expireAt?: number }) => Network.post("/panel/link/create", data);
-export const updatePanelLink = (id: number | string, data: { name: string; format: string; templateId?: number | string; rulesetIds?: string; expireAt?: number }) => Network.post("/panel/link/update", { id: String(id), ...data });
+export interface PanelLinkPayload {
+  name: string;
+  format: string;
+  templateId?: number | string;
+  rulesetIds?: string;
+  nodeIds?: string;
+  expireAt?: number;
+}
+export const createPanelLink = (data: PanelLinkPayload) => Network.post("/panel/link/create", data);
+export const updatePanelLink = (id: number | string, data: PanelLinkPayload) => Network.post("/panel/link/update", { id: String(id), ...data });
 export const resetPanelLinkToken = (id: number | string) => Network.post("/panel/link/reset-token", { id: String(id) });
 export const deletePanelLink = (id: number | string) => Network.post("/panel/link/delete", { id: String(id) });

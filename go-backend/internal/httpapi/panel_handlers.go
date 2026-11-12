@@ -389,6 +389,10 @@ func validateLinkInput(input *store.LinkInput) string {
 		input.Format = "clash"
 	}
 	input.RulesetIDs = store.NormalizeRulesetIDs(input.RulesetIDs)
+	input.NodeIDs = store.NormalizeNodeIDs(input.NodeIDs)
+	if len(input.NodeIDs) > 3800 {
+		return "选中的节点太多,分几条订阅链接吧"
+	}
 	return ""
 }
 
@@ -474,9 +478,9 @@ func (a *API) loadPanelSubscription(w http.ResponseWriter, r *http.Request) (sto
 		http.Error(w, "订阅链接无效或已过期", http.StatusNotFound)
 		return link, store.SubscriptionOutput{}, false
 	}
-	output, err := a.store.SubscriptionByToken(r.Context(), link.Token)
-	if err != nil || output.UserID == 0 || !output.Usable {
-		http.Error(w, "订阅关联的账号不可用", http.StatusForbidden)
+	output, ok := a.panelOutputFor(r.Context(), link)
+	if !ok {
+		http.Error(w, "这条订阅链接没有可用节点", http.StatusForbidden)
 		return link, output, false
 	}
 	if err := a.store.BumpSubscribeLinkVisits(r.Context(), link.ID); err != nil {
@@ -484,6 +488,61 @@ func (a *API) loadPanelSubscription(w http.ResponseWriter, r *http.Request) (sto
 		_ = err
 	}
 	return link, output, true
+}
+
+// panelOutputFor 决定这条订阅链接输出哪些节点。
+//
+//   - 带了 node_ids(新建订阅时从「节点管理」里挑的):直接用这些 custom_node 渲染,
+//     不再依赖某个车友的 token —— 之前面板链接拿自己的 token 去当车友 token 查,
+//     查不到就 403,链接等于建了不能用;
+//   - 老链接(没有 node_ids):沿用「借用车友 all_sub_token / 线路 sub_token」的老路径。
+func (a *API) panelOutputFor(ctx context.Context, link store.SubscribeLink) (store.SubscriptionOutput, bool) {
+	if ids := parsePanelNodeIDs(link.NodeIDs); len(ids) > 0 {
+		nodes, err := a.store.PanelNodesByIDs(ctx, ids)
+		if err != nil || len(nodes) == 0 {
+			return store.SubscriptionOutput{}, false
+		}
+		output := store.SubscriptionOutput{
+			Usable:       true,
+			Entries:      []store.SubscriptionEntry{},
+			CustomLinks:  make([]string, 0, len(nodes)),
+			CustomParsed: make([]map[string]any, 0, len(nodes)),
+		}
+		for _, node := range nodes {
+			if node.RawLink != "" {
+				output.CustomLinks = append(output.CustomLinks, node.RawLink)
+			}
+			parsed := node.Parsed
+			if parsed == nil {
+				parsed = map[string]any{}
+			}
+			if _, ok := parsed["protocol"]; !ok {
+				parsed["protocol"] = node.Protocol
+			}
+			if _, ok := parsed["name"]; !ok || parsed["name"] == "" {
+				parsed["name"] = node.Name
+			}
+			output.CustomParsed = append(output.CustomParsed, parsed)
+		}
+		return output, true
+	}
+	output, err := a.store.SubscriptionByToken(ctx, link.Token)
+	if err != nil || output.UserID == 0 || !output.Usable {
+		return output, false
+	}
+	return output, true
+}
+
+// parsePanelNodeIDs 把 "1,2,3" 解析成 id 列表,非法项直接丢。
+func parsePanelNodeIDs(raw string) []int64 {
+	ids := []int64{}
+	for _, part := range strings.Split(raw, ",") {
+		id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 func (a *API) panelSubscription(w http.ResponseWriter, r *http.Request) {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -298,6 +299,7 @@ type SubscribeLink struct {
 	Format      string `json:"format"` // clash | v2ray | singbox
 	TemplateID  int64  `json:"templateId"`
 	RulesetIDs  string `json:"rulesetIds"` // 逗号分隔
+	NodeIDs     string `json:"nodeIds"`    // 逗号分隔,引用 custom_node.id
 	ExpireAt    int64  `json:"expireAt"`
 	VisitCount  int64  `json:"visitCount"`
 	Status      int    `json:"status"`
@@ -310,6 +312,7 @@ type LinkInput struct {
 	Format     string `json:"format"`
 	TemplateID int64  `json:"templateId"`
 	RulesetIDs string `json:"rulesetIds"`
+	NodeIDs    string `json:"nodeIds"`
 	ExpireAt   int64  `json:"expireAt"`
 }
 
@@ -324,7 +327,7 @@ func newSubToken() (string, error) {
 }
 
 func (s *Store) SubscribeLinks(ctx context.Context) ([]SubscribeLink, error) {
-	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " ORDER BY " + s.quote("id") + " DESC"
+	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "node_ids", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " ORDER BY " + s.quote("id") + " DESC"
 	rows, err := s.db.QueryContext(ctx, s.bind(query))
 	if err != nil {
 		return nil, err
@@ -334,31 +337,34 @@ func (s *Store) SubscribeLinks(ctx context.Context) ([]SubscribeLink, error) {
 	for rows.Next() {
 		var l SubscribeLink
 		var templateID sql.NullInt64
-		if err := rows.Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime); err != nil {
+		var nodeIDs sql.NullString
+		if err := rows.Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &nodeIDs, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime); err != nil {
 			return nil, err
 		}
-		l.TemplateID = templateID.Int64
+		l.TemplateID, l.NodeIDs = templateID.Int64, nodeIDs.String
 		list = append(list, l)
 	}
 	return list, rows.Err()
 }
 
 func (s *Store) SubscribeLinkByID(ctx context.Context, id int64) (SubscribeLink, error) {
-	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " WHERE " + s.quote("id") + "=? LIMIT 1"
+	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "node_ids", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " WHERE " + s.quote("id") + "=? LIMIT 1"
 	var l SubscribeLink
 	var templateID sql.NullInt64
-	err := s.db.QueryRowContext(ctx, s.bind(query), id).Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime)
-	l.TemplateID = templateID.Int64
+	var nodeIDs sql.NullString
+	err := s.db.QueryRowContext(ctx, s.bind(query), id).Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &nodeIDs, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime)
+	l.TemplateID, l.NodeIDs = templateID.Int64, nodeIDs.String
 	return l, err
 }
 
 // SubscribeLinkByToken 公开下载端点用:只认 status=1 且未过期的。
 func (s *Store) SubscribeLinkByToken(ctx context.Context, token string) (SubscribeLink, error) {
-	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " WHERE " + s.quote("token") + "=? AND " + s.quote("status") + "=1 LIMIT 1"
+	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "node_ids", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " WHERE " + s.quote("token") + "=? AND " + s.quote("status") + "=1 LIMIT 1"
 	var l SubscribeLink
 	var templateID sql.NullInt64
-	err := s.db.QueryRowContext(ctx, s.bind(query), token).Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime)
-	l.TemplateID = templateID.Int64
+	var nodeIDs sql.NullString
+	err := s.db.QueryRowContext(ctx, s.bind(query), token).Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &nodeIDs, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime)
+	l.TemplateID, l.NodeIDs = templateID.Int64, nodeIDs.String
 	if err != nil {
 		return l, err
 	}
@@ -374,13 +380,16 @@ func (s *Store) CreateSubscribeLink(ctx context.Context, input LinkInput) (Subsc
 		return SubscribeLink{}, err
 	}
 	now := time.Now().UnixMilli()
-	query := "INSERT INTO " + s.quote("subscribe_link") + " (" + s.columns("name", "token", "format", "template_id", "ruleset_ids", "expire_at", "created_time", "updated_time") + ") VALUES (?,?,?,?,?,?,?,?)"
+	query := "INSERT INTO " + s.quote("subscribe_link") + " (" + s.columns("name", "token", "format", "template_id", "ruleset_ids", "node_ids", "expire_at", "created_time", "updated_time") + ") VALUES (?,?,?,?,?,?,?,?,?)"
+	args := []any{input.Name, token, input.Format, input.RulesetIDs, input.NodeIDs, input.ExpireAt, now, now}
 	var res sql.Result
 	if input.TemplateID > 0 {
-		res, err = s.db.ExecContext(ctx, s.bind(query), input.Name, token, input.Format, input.TemplateID, input.RulesetIDs, input.ExpireAt, now, now)
+		// template_id 放在 ruleset_ids 前面,占位符顺序必须跟着列顺序走。
+		args = []any{input.Name, token, input.Format, input.TemplateID, input.RulesetIDs, input.NodeIDs, input.ExpireAt, now, now}
+		res, err = s.db.ExecContext(ctx, s.bind(query), args...)
 	} else {
-		queryNil := "INSERT INTO " + s.quote("subscribe_link") + " (" + s.columns("name", "token", "format", "ruleset_ids", "expire_at", "created_time", "updated_time") + ") VALUES (?,?,?,?,?,?,?)"
-		res, err = s.db.ExecContext(ctx, s.bind(queryNil), input.Name, token, input.Format, input.RulesetIDs, input.ExpireAt, now, now)
+		queryNil := "INSERT INTO " + s.quote("subscribe_link") + " (" + s.columns("name", "token", "format", "ruleset_ids", "node_ids", "expire_at", "created_time", "updated_time") + ") VALUES (?,?,?,?,?,?,?,?)"
+		res, err = s.db.ExecContext(ctx, s.bind(queryNil), input.Name, token, input.Format, input.RulesetIDs, input.NodeIDs, input.ExpireAt, now, now)
 	}
 	if err != nil {
 		return SubscribeLink{}, err
@@ -397,8 +406,8 @@ func (s *Store) CreateSubscribeLink(ctx context.Context, input LinkInput) (Subsc
 
 func (s *Store) UpdateSubscribeLink(ctx context.Context, id int64, input LinkInput) (SubscribeLink, error) {
 	now := time.Now().UnixMilli()
-	set := s.quote("name") + "=?, " + s.quote("format") + "=?, " + s.quote("ruleset_ids") + "=?, " + s.quote("expire_at") + "=?, " + s.quote("updated_time") + "=?"
-	args := []any{input.Name, input.Format, input.RulesetIDs, input.ExpireAt, now}
+	set := s.quote("name") + "=?, " + s.quote("format") + "=?, " + s.quote("ruleset_ids") + "=?, " + s.quote("node_ids") + "=?, " + s.quote("expire_at") + "=?, " + s.quote("updated_time") + "=?"
+	args := []any{input.Name, input.Format, input.RulesetIDs, input.NodeIDs, input.ExpireAt, now}
 	if input.TemplateID > 0 {
 		set += ", " + s.quote("template_id") + "=?"
 		args = append(args, input.TemplateID)
@@ -439,6 +448,9 @@ func (s *Store) BumpSubscribeLinkVisits(ctx context.Context, id int64) error {
 	return err
 }
 
+// NormalizeNodeIDs 与 NormalizeRulesetIDs 同款,给 custom_node.id 列表用。
+func NormalizeNodeIDs(raw string) string { return NormalizeRulesetIDs(raw) }
+
 // NormalizeRulesetIDs 把 "1, 2, 3" 之类输入洗成 "1,2";空返回空串。
 func NormalizeRulesetIDs(raw string) string {
 	parts := strings.Split(raw, ",")
@@ -450,4 +462,50 @@ func NormalizeRulesetIDs(raw string) string {
 		}
 	}
 	return strings.Join(out, ",")
+}
+
+// ---------- 订阅链接可选的节点 ----------
+
+// PanelNode 订阅链接里被选中的节点(custom_node 表)。
+// 订阅输出不再要求「借用某个车友的 token」,而是直接按链接自带的 node_ids 渲染。
+type PanelNode struct {
+	ID       int64
+	Name     string
+	Protocol string
+	RawLink  string
+	Parsed   map[string]any
+}
+
+// PanelNodesByIDs 按 id 取节点,只取 status=1 的(停用的节点不该出现在订阅里)。
+func (s *Store) PanelNodesByIDs(ctx context.Context, ids []int64) ([]PanelNode, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for index, id := range ids {
+		placeholders[index] = "?"
+		args[index] = id
+	}
+	query := "SELECT " + s.columns("id", "name", "protocol", "raw_link", "parsed_json") + " FROM " + s.quote("custom_node") + " WHERE " + s.quote("status") + "=1 AND " + s.quote("id") + " IN (" + strings.Join(placeholders, ",") + ") ORDER BY " + s.quote("id")
+	rows, err := s.db.QueryContext(ctx, s.bind(query), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	nodes := []PanelNode{}
+	for rows.Next() {
+		var node PanelNode
+		var raw, parsed sql.NullString
+		if err := rows.Scan(&node.ID, &node.Name, &node.Protocol, &raw, &parsed); err != nil {
+			return nil, err
+		}
+		node.RawLink = raw.String
+		node.Parsed = map[string]any{}
+		if parsed.String != "" {
+			_ = json.Unmarshal([]byte(parsed.String), &node.Parsed)
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes, rows.Err()
 }

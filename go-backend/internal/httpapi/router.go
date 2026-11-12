@@ -101,6 +101,7 @@ type DataStore interface {
 	ResetSubscribeLinkToken(context.Context, int64) (string, error)
 	DeleteSubscribeLink(context.Context, int64) error
 	BumpSubscribeLinkVisits(context.Context, int64) error
+	PanelNodesByIDs(context.Context, []int64) ([]store.PanelNode, error)
 }
 
 type VerificationService interface {

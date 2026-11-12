@@ -1,10 +1,13 @@
 package httpapi
 
 import (
-	"github.com/ziyue67/tms/go-backend/internal/paneldefaults"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/ziyue67/tms/go-backend/internal/paneldefaults"
+	"github.com/ziyue67/tms/go-backend/internal/store"
 )
 
 // 文本模板(YAML)注入:proxies: null 换成真实节点、__PROXY_NODES__ 展开成节点名、
@@ -138,5 +141,47 @@ func TestBuiltinClashTemplateRendersCleanly(t *testing.T) {
 	}
 	if !strings.Contains(out, "rule-providers:") {
 		t.Fatal("模板自带的 rule-providers 段必须原样保留")
+	}
+}
+
+// 订阅链接带 node_ids 时,输出直接来自节点,不再去查车友 token。
+func TestPanelOutputUsesLinkNodes(t *testing.T) {
+	fake := &fakeStore{panelNodes: []store.PanelNode{
+		{ID: 7001, Name: "香港 01", Protocol: "shadowsocks", RawLink: "ss://abc", Parsed: map[string]any{"server": "1.2.3.4", "port": 443, "method": "aes-256-gcm", "password": "pw"}},
+		{ID: 7002, Name: "日本 02", Protocol: "trojan", RawLink: "trojan://xyz", Parsed: map[string]any{"server": "5.6.7.8", "port": 8443, "password": "pw2", "sni": "example.com"}},
+	}}
+	api := &API{store: fake}
+	output, ok := api.panelOutputFor(context.Background(), store.SubscribeLink{ID: 1, Token: "whatever", NodeIDs: "7001,7002"})
+	if !ok {
+		t.Fatal("带 node_ids 的链接应该能出输出")
+	}
+	if len(output.CustomParsed) != 2 || len(output.CustomLinks) != 2 {
+		t.Fatalf("节点数不对: parsed=%d links=%d", len(output.CustomParsed), len(output.CustomLinks))
+	}
+	if output.CustomParsed[0]["protocol"] != "shadowsocks" {
+		t.Fatalf("protocol 没有补进解析结果: %v", output.CustomParsed[0])
+	}
+	if output.UserID != 0 {
+		t.Fatal("节点模式不应该依赖车友账号")
+	}
+
+	proxies := buildClashProxies(output)
+	if len(proxies) != 2 {
+		t.Fatalf("clash 代理数不对: %d", len(proxies))
+	}
+	if proxies[0]["type"] != "ss" || proxies[0]["cipher"] != "aes-256-gcm" {
+		t.Fatalf("shadowsocks 转换不对: %v", proxies[0])
+	}
+	if proxies[1]["type"] != "trojan" || proxies[1]["sni"] != "example.com" {
+		t.Fatalf("trojan 转换不对: %v", proxies[1])
+	}
+}
+
+// 没有 node_ids 的老链接不能崩,只是走旧路径(查不到车友就返回不可用)。
+func TestPanelOutputFallsBackForLegacyLink(t *testing.T) {
+	fake := &fakeStore{}
+	api := &API{store: fake}
+	if _, ok := api.panelOutputFor(context.Background(), store.SubscribeLink{Token: "no-such-token"}); ok {
+		t.Fatal("查不到车友的老链接应该返回不可用")
 	}
 }
