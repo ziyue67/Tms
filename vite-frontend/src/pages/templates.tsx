@@ -282,6 +282,11 @@ export default function TemplatesPage() {
       toast.error("请填模板名");
       return;
     }
+    // 内容还没读回来就保存会把模板清空,直接拦住。
+    if (editing && contentLoading) {
+      toast.error("模板内容还在读取,稍等一下再保存");
+      return;
+    }
     if (form.client === "singbox" && content.trim()) {
       try {
         JSON.parse(content);
