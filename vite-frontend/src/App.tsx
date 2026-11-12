@@ -12,6 +12,9 @@ import ProfilePage from "@/pages/profile";
 import LimitPage from "@/pages/limit";
 import InboundPage from "@/pages/inbound";
 import RelayPage from "@/pages/relay";
+import RulesetsPage from "@/pages/rulesets";
+import TemplatesPage from "@/pages/templates";
+import SubscribeLinksPage from "@/pages/subscribe-links";
 import GuidePage from "@/pages/guide";
 import MySubPage from "@/pages/my-sub";
 import ConfigPage from "@/pages/config";
@@ -161,6 +164,30 @@ function App() {
         element={
           <ProtectedRoute>
             <RelayPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/rulesets"
+        element={
+          <ProtectedRoute>
+            <RulesetsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/templates"
+        element={
+          <ProtectedRoute>
+            <TemplatesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/subscribe-links"
+        element={
+          <ProtectedRoute>
+            <SubscribeLinksPage />
           </ProtectedRoute>
         }
       />

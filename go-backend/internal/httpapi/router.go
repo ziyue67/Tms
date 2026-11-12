@@ -78,6 +78,27 @@ type DataStore interface {
 	ResetSubscriptionQuota(context.Context, int64) (*store.UserSubscription, error)
 	RedeemSubscription(context.Context, int64, string) (*store.UserSubscription, error)
 	SubscriptionDashboard(context.Context, int64) (map[string]any, error)
+	Rulesets(context.Context) ([]store.Ruleset, error)
+	RulesetByID(context.Context, int64) (store.Ruleset, string, error)
+	RulesetContentByName(context.Context, string) (string, int64, error)
+	CreateRuleset(context.Context, store.RulesetInput) (store.Ruleset, error)
+	UpdateRuleset(context.Context, int64, store.RulesetInput) (store.Ruleset, error)
+	DeleteRuleset(context.Context, int64) error
+	MarkRulesetFetched(context.Context, int64, string, string) error
+	SubscribeTemplates(context.Context) ([]store.SubscribeTemplate, error)
+	SubscribeTemplateByID(context.Context, int64) (store.SubscribeTemplate, error)
+	CreateSubscribeTemplate(context.Context, store.TemplateInput) (store.SubscribeTemplate, error)
+	UpdateSubscribeTemplate(context.Context, int64, store.TemplateInput) (store.SubscribeTemplate, error)
+	DeleteSubscribeTemplate(context.Context, int64) error
+	DefaultTemplateID(context.Context) (int64, error)
+	SubscribeLinks(context.Context) ([]store.SubscribeLink, error)
+	SubscribeLinkByID(context.Context, int64) (store.SubscribeLink, error)
+	SubscribeLinkByToken(context.Context, string) (store.SubscribeLink, error)
+	CreateSubscribeLink(context.Context, store.LinkInput) (store.SubscribeLink, error)
+	UpdateSubscribeLink(context.Context, int64, store.LinkInput) (store.SubscribeLink, error)
+	ResetSubscribeLinkToken(context.Context, int64) (string, error)
+	DeleteSubscribeLink(context.Context, int64) error
+	BumpSubscribeLinkVisits(context.Context, int64) error
 }
 
 type VerificationService interface {
@@ -164,6 +185,9 @@ func New(dependencies Dependencies) http.Handler {
 		v1.Get("/open_api/sub", api.openSubscription)
 		v1.Get("/open_api/clash", api.openClashSubscription)
 		v1.Get("/open_api/sub_store", api.openSubscriptionStore)
+		// 妙妙屋四面板的公开下载:订阅链接 + 规则集文件(不需要登录态,凭 token/随机名取)。
+		v1.Get("/open_api/panel/{token}", api.panelSubscription)
+		v1.Get("/open_api/panel-ruleset/{name}", api.panelRulesetFile)
 
 		v1.Group(func(authenticated chi.Router) {
 			authenticated.Use(authenticate(api.tokens))
@@ -270,6 +294,24 @@ func New(dependencies Dependencies) http.Handler {
 				admin.Post("/inbound/line-delete", api.deleteInboundLine)
 				admin.Post("/inbound/rename", api.renameInbound)
 				admin.Post("/inbound/auto-provision-targets", api.autoProvisionTargets)
+
+				// 妙妙屋四面板(转发管理复用既有 /forward /tunnel /landing;这里是其余三块)
+				admin.Post("/panel/ruleset/list", api.panelRulesetList)
+				admin.Post("/panel/ruleset/get", api.panelRulesetGet)
+				admin.Post("/panel/ruleset/create", api.panelRulesetCreate)
+				admin.Post("/panel/ruleset/update", api.panelRulesetUpdate)
+				admin.Post("/panel/ruleset/delete", api.panelRulesetDelete)
+				admin.Post("/panel/ruleset/refresh", api.panelRulesetRefresh)
+				admin.Post("/panel/template/list", api.panelTemplateList)
+				admin.Post("/panel/template/get", api.panelTemplateGet)
+				admin.Post("/panel/template/create", api.panelTemplateCreate)
+				admin.Post("/panel/template/update", api.panelTemplateUpdate)
+				admin.Post("/panel/template/delete", api.panelTemplateDelete)
+				admin.Post("/panel/link/list", api.panelLinkList)
+				admin.Post("/panel/link/create", api.panelLinkCreate)
+				admin.Post("/panel/link/update", api.panelLinkUpdate)
+				admin.Post("/panel/link/reset-token", api.panelLinkResetToken)
+				admin.Post("/panel/link/delete", api.panelLinkDelete)
 				admin.Post("/inbound/auto-provision-target", api.setAutoProvisionTarget)
 				admin.Post("/inbound/provision-subscribed-users", api.provisionSubscribers)
 				admin.Post("/inbound/provision-subscribed-users-relay", api.provisionSubscribers)
@@ -283,6 +325,11 @@ func New(dependencies Dependencies) http.Handler {
 
 	router.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 		writeResponseStatus(w, http.StatusNotFound, Error(404, "接口不存在"))
+	})
+	// 订阅渲染时按 id 读规则集内容。
+	SetPanelRulesetLoader(func(id int64) (string, error) {
+		_, content, err := api.store.RulesetByID(context.Background(), id)
+		return content, err
 	})
 	return router
 }

@@ -180,3 +180,65 @@ export const updateConfig = (name: string, value: string) => Network.post("/conf
 export const checkCaptcha = () => Network.post("/captcha/check");
 export const generateCaptcha = () => Network.post<{ id: string; question: string; expiresIn: number }>(`/captcha/generate`);
 export const verifyCaptcha = (data: { id: string; answer: string }) => Network.post<{ validToken: string }>("/captcha/verify", data);
+
+// ---------- 妙妙屋四面板:规则集 / 模板管理 / 订阅链接 ----------
+
+// 规则集(clash rule-providers 托管)
+export interface PanelRuleset {
+  id: number;
+  name: string;
+  displayName: string;
+  source: "manual" | "remote";
+  remoteUrl: string;
+  refreshMinutes: number;
+  size: number;
+  lastFetchAt: number;
+  lastFetchError: string;
+  status: number;
+  createdTime: number;
+  updatedTime: number;
+}
+export const getPanelRulesets = () => Network.post("/panel/ruleset/list");
+export const getPanelRuleset = (id: number | string) => Network.post("/panel/ruleset/get", { id: String(id) });
+export const createPanelRuleset = (data: { name: string; displayName?: string; source: "manual" | "remote"; remoteUrl?: string; refreshMinutes?: number; content?: string }) => Network.post("/panel/ruleset/create", data);
+export const updatePanelRuleset = (id: number | string, data: { name: string; displayName?: string; source: "manual" | "remote"; remoteUrl?: string; refreshMinutes?: number; content?: string }) => Network.post("/panel/ruleset/update", { id: String(id), ...data });
+export const deletePanelRuleset = (id: number | string) => Network.post("/panel/ruleset/delete", { id: String(id) });
+export const refreshPanelRuleset = (id: number | string) => Network.post("/panel/ruleset/refresh", { id: String(id) });
+
+// 订阅模板(v2 文本 / v3 JSON)
+export interface PanelTemplate {
+  id: number;
+  name: string;
+  version: "v2" | "v3";
+  isDefault: number;
+  content?: string;
+  remark: string;
+  status: number;
+  createdTime: number;
+  updatedTime: number;
+}
+export const getPanelTemplates = () => Network.post("/panel/template/list");
+export const getPanelTemplate = (id: number | string) => Network.post("/panel/template/get", { id: String(id) });
+export const createPanelTemplate = (data: { name: string; version: "v2" | "v3"; isDefault?: number; content?: string; remark?: string }) => Network.post("/panel/template/create", data);
+export const updatePanelTemplate = (id: number | string, data: { name: string; version: "v2" | "v3"; isDefault?: number; content?: string; remark?: string }) => Network.post("/panel/template/update", { id: String(id), ...data });
+export const deletePanelTemplate = (id: number | string) => Network.post("/panel/template/delete", { id: String(id) });
+
+// 订阅链接(token 直链)
+export interface PanelLink {
+  id: number;
+  name: string;
+  token: string;
+  format: "clash" | "v2ray" | "singbox";
+  templateId: number;
+  rulesetIds: string;
+  expireAt: number;
+  visitCount: number;
+  status: number;
+  createdTime: number;
+  updatedTime: number;
+}
+export const getPanelLinks = () => Network.post("/panel/link/list");
+export const createPanelLink = (data: { name: string; format: string; templateId?: number | string; rulesetIds?: string; expireAt?: number }) => Network.post("/panel/link/create", data);
+export const updatePanelLink = (id: number | string, data: { name: string; format: string; templateId?: number | string; rulesetIds?: string; expireAt?: number }) => Network.post("/panel/link/update", { id: String(id), ...data });
+export const resetPanelLinkToken = (id: number | string) => Network.post("/panel/link/reset-token", { id: String(id) });
+export const deletePanelLink = (id: number | string) => Network.post("/panel/link/delete", { id: String(id) });

@@ -185,6 +185,62 @@ func (s *fakeStore) SubscriptionDashboard(context.Context, int64) (map[string]an
 	return map[string]any{}, nil
 }
 
+// ---- 妙妙屋四面板 mock:默认返回零值/空列表,面板 handlers 的单测按需扩展 ----
+
+func (s *fakeStore) Rulesets(context.Context) ([]store.Ruleset, error) { return []store.Ruleset{}, nil }
+func (s *fakeStore) RulesetByID(context.Context, int64) (store.Ruleset, string, error) {
+	return store.Ruleset{}, "", sql.ErrNoRows
+}
+func (s *fakeStore) RulesetContentByName(context.Context, string) (string, int64, error) {
+	return "", 0, sql.ErrNoRows
+}
+func (s *fakeStore) CreateRuleset(context.Context, store.RulesetInput) (store.Ruleset, error) {
+	return store.Ruleset{}, nil
+}
+func (s *fakeStore) UpdateRuleset(context.Context, int64, store.RulesetInput) (store.Ruleset, error) {
+	return store.Ruleset{}, nil
+}
+func (s *fakeStore) DeleteRuleset(context.Context, int64) error { return nil }
+func (s *fakeStore) MarkRulesetFetched(context.Context, int64, string, string) error {
+	return nil
+}
+func (s *fakeStore) SubscribeTemplates(context.Context) ([]store.SubscribeTemplate, error) {
+	return []store.SubscribeTemplate{}, nil
+}
+func (s *fakeStore) SubscribeTemplateByID(context.Context, int64) (store.SubscribeTemplate, error) {
+	return store.SubscribeTemplate{}, sql.ErrNoRows
+}
+func (s *fakeStore) CreateSubscribeTemplate(context.Context, store.TemplateInput) (store.SubscribeTemplate, error) {
+	return store.SubscribeTemplate{}, nil
+}
+func (s *fakeStore) UpdateSubscribeTemplate(context.Context, int64, store.TemplateInput) (store.SubscribeTemplate, error) {
+	return store.SubscribeTemplate{}, nil
+}
+func (s *fakeStore) DeleteSubscribeTemplate(context.Context, int64) error { return nil }
+func (s *fakeStore) DefaultTemplateID(context.Context) (int64, error)    { return 0, nil }
+func (s *fakeStore) SubscribeLinks(context.Context) ([]store.SubscribeLink, error) {
+	return []store.SubscribeLink{}, nil
+}
+func (s *fakeStore) SubscribeLinkByID(context.Context, int64) (store.SubscribeLink, error) {
+	return store.SubscribeLink{}, sql.ErrNoRows
+}
+func (s *fakeStore) SubscribeLinkByToken(context.Context, string) (store.SubscribeLink, error) {
+	return store.SubscribeLink{}, sql.ErrNoRows
+}
+func (s *fakeStore) CreateSubscribeLink(context.Context, store.LinkInput) (store.SubscribeLink, error) {
+	return store.SubscribeLink{}, nil
+}
+func (s *fakeStore) UpdateSubscribeLink(context.Context, int64, store.LinkInput) (store.SubscribeLink, error) {
+	return store.SubscribeLink{}, nil
+}
+func (s *fakeStore) ResetSubscribeLinkToken(context.Context, int64) (string, error) {
+	return "", nil
+}
+func (s *fakeStore) DeleteSubscribeLink(context.Context, int64) error { return nil }
+func (s *fakeStore) BumpSubscribeLinkVisits(context.Context, int64) error {
+	return nil
+}
+
 func (s *fakeStore) UpdatePassword(_ context.Context, _ int64, encoded string) error {
 	s.updatedPassword = encoded
 	return nil
