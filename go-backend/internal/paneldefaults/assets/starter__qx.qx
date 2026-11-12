@@ -1,0 +1,42 @@
+;[general]
+; > Quantumult X 规则模板(节点请用「订阅链接」在 QX 里导入,或在 [server_local] 手动添加)
+server_check_url=http://cp.cloudflare.com/generate_204
+network_check_url=http://www.baidu.com
+resource_parser_url=https://raw.githubusercontent.com/KOP-XIAO/QuantumultX/master/Scripts/resource-parser.js
+dns_excluded=*.cn,*.local
+dns_server=223.5.5.5,119.29.29.29
+geoip_cn_url=https://raw.githubusercontent.com/KOP-XIAO/QuantumultX/master/geo/geolite2-country.mmdb
+
+;[policy]
+static=节点选择, 自动选择, 直连, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Proxy.png
+static=自动选择, 节点选择, 直连, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Auto.png
+url-latency-benchmark=自动测速, server-tag-regex=.*, check-interval=300, tolerance=50, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Speedtest.png
+static=谷歌服务, 节点选择, 直连, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Google_Search.png
+static=电报消息, 节点选择, 直连, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Telegram.png
+static=苹果服务, 直连, 节点选择, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Apple_Arcade.png
+static=微软服务, 直连, 节点选择, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Microsoft.png
+static=油管视频, 节点选择, 直连, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/YouTube.png
+static=哔哩哔哩, 直连, 节点选择, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/bilibili.png
+static=国外媒体, 节点选择, 直连, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Streaming.png
+static=国内直连, 直连, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/China.png
+static=全球直连, 直连, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Direct.png
+static=漏网之鱼, 节点选择, 直连, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Final.png
+
+;[server_local]
+; > 直接把面板「订阅链接」地址填到 QX 的节点订阅里,节点会自动出现;
+; > 也可以在此手写单节点,例如:
+; vmess=example.com:443, method=none, password=uuid, obfs=wss, obfs-host=example.com, obfs-uri=/, tls-verification=true, fast-open=false, udp-relay=false, tag=示例节点
+
+;[filter_remote]
+https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/Advertising/Advertising.list, tag=广告拦截, force-policy=reject, enabled=true
+https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/Google/Google.list, tag=谷歌服务, force-policy=谷歌服务, enabled=true
+https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/Telegram/Telegram.list, tag=电报消息, force-policy=电报消息, enabled=true
+https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/Apple/Apple.list, tag=苹果服务, force-policy=苹果服务, enabled=true
+https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/Microsoft/Microsoft.list, tag=微软服务, force-policy=微软服务, enabled=true
+https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/YouTube/YouTube.list, tag=油管视频, force-policy=油管视频, enabled=true
+https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/Bilibili/Bilibili.list, tag=哔哩哔哩, force-policy=哔哩哔哩, enabled=true
+https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/China/China.list, tag=国内直连, force-policy=国内直连, enabled=true
+
+;[filter_local]
+geoip, cn, 国内直连
+final, 漏网之鱼

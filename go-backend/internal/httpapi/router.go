@@ -90,6 +90,8 @@ type DataStore interface {
 	CreateSubscribeTemplate(context.Context, store.TemplateInput) (store.SubscribeTemplate, error)
 	UpdateSubscribeTemplate(context.Context, int64, store.TemplateInput) (store.SubscribeTemplate, error)
 	DeleteSubscribeTemplate(context.Context, int64) error
+	SetSubscribeTemplateDefault(context.Context, int64) error
+	ResetSubscribeTemplateContent(context.Context, int64, string) error
 	DefaultTemplateID(context.Context) (int64, error)
 	SubscribeLinks(context.Context) ([]store.SubscribeLink, error)
 	SubscribeLinkByID(context.Context, int64) (store.SubscribeLink, error)
@@ -307,6 +309,8 @@ func New(dependencies Dependencies) http.Handler {
 				admin.Post("/panel/template/create", api.panelTemplateCreate)
 				admin.Post("/panel/template/update", api.panelTemplateUpdate)
 				admin.Post("/panel/template/delete", api.panelTemplateDelete)
+				admin.Post("/panel/template/set-default", api.panelTemplateSetDefault)
+				admin.Post("/panel/template/reset", api.panelTemplateReset)
 				admin.Post("/panel/link/list", api.panelLinkList)
 				admin.Post("/panel/link/create", api.panelLinkCreate)
 				admin.Post("/panel/link/update", api.panelLinkUpdate)

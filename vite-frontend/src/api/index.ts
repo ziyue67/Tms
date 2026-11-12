@@ -205,12 +205,28 @@ export const updatePanelRuleset = (id: number | string, data: { name: string; di
 export const deletePanelRuleset = (id: number | string) => Network.post("/panel/ruleset/delete", { id: String(id) });
 export const refreshPanelRuleset = (id: number | string) => Network.post("/panel/ruleset/refresh", { id: String(id) });
 
-// 订阅模板(v2 文本 / v3 JSON)
+// 订阅模板客户端类型(与模板管理页的标签页一致)
+export type PanelTemplateClient = "clash" | "surge" | "loon" | "quanx" | "singbox";
+
+export interface PanelTemplatePayload {
+  name: string;
+  client: PanelTemplateClient;
+  version: "v2" | "v3";
+  isDefault?: number;
+  visible?: number;
+  content?: string;
+  remark?: string;
+}
+
+// 订阅模板(v2 文本 / v3 结构化骨架)
 export interface PanelTemplate {
   id: number;
   name: string;
+  client: PanelTemplateClient;
   version: "v2" | "v3";
   isDefault: number;
+  visible: number;
+  builtin: number;
   content?: string;
   remark: string;
   status: number;
@@ -219,9 +235,11 @@ export interface PanelTemplate {
 }
 export const getPanelTemplates = () => Network.post("/panel/template/list");
 export const getPanelTemplate = (id: number | string) => Network.post("/panel/template/get", { id: String(id) });
-export const createPanelTemplate = (data: { name: string; version: "v2" | "v3"; isDefault?: number; content?: string; remark?: string }) => Network.post("/panel/template/create", data);
-export const updatePanelTemplate = (id: number | string, data: { name: string; version: "v2" | "v3"; isDefault?: number; content?: string; remark?: string }) => Network.post("/panel/template/update", { id: String(id), ...data });
+export const createPanelTemplate = (data: PanelTemplatePayload) => Network.post("/panel/template/create", data);
+export const updatePanelTemplate = (id: number | string, data: PanelTemplatePayload) => Network.post("/panel/template/update", { id: String(id), ...data });
 export const deletePanelTemplate = (id: number | string) => Network.post("/panel/template/delete", { id: String(id) });
+export const setPanelTemplateDefault = (id: number | string) => Network.post("/panel/template/set-default", { id: String(id) });
+export const resetPanelTemplate = (id: number | string) => Network.post("/panel/template/reset", { id: String(id) });
 
 // 订阅链接(token 直链)
 export interface PanelLink {
