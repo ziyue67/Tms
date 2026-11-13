@@ -2,10 +2,10 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -304,6 +304,7 @@ type SubscribeLink struct {
 	NodeIDs     string `json:"nodeIds"`    // 逗号分隔,引用 custom_node.id
 	UserID      int64  `json:"userId"`     // 非 0 = 输出该账号自己的节点(用户自建订阅)
 	Shared      int    `json:"shared"`     // 1 = 订阅集(无账号无节点),用户可套用
+	GroupsJSON  string `json:"groupsJson"` // 分组订阅:[{name,nodeIds,rulesetIds}]
 	ExpireAt    int64  `json:"expireAt"`
 	VisitCount  int64  `json:"visitCount"`
 	Status      int    `json:"status"`
@@ -319,6 +320,7 @@ type LinkInput struct {
 	NodeIDs    string `json:"nodeIds"`
 	UserID     int64  `json:"userId"`
 	Shared     int    `json:"shared"`
+	GroupsJSON string `json:"groupsJson"`
 	ExpireAt   int64  `json:"expireAt"`
 }
 
@@ -333,7 +335,7 @@ func newSubToken() (string, error) {
 }
 
 func (s *Store) SubscribeLinks(ctx context.Context) ([]SubscribeLink, error) {
-	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " ORDER BY " + s.quote("id") + " DESC"
+	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "groups_json", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " ORDER BY " + s.quote("id") + " DESC"
 	rows, err := s.db.QueryContext(ctx, s.bind(query))
 	if err != nil {
 		return nil, err
@@ -345,35 +347,38 @@ func (s *Store) SubscribeLinks(ctx context.Context) ([]SubscribeLink, error) {
 		var templateID sql.NullInt64
 		var nodeIDs sql.NullString
 		var userID sql.NullInt64
-		if err := rows.Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &nodeIDs, &userID, &l.Shared, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime); err != nil {
+		var groups sql.NullString
+		if err := rows.Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &nodeIDs, &userID, &l.Shared, &groups, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime); err != nil {
 			return nil, err
 		}
-		l.TemplateID, l.NodeIDs, l.UserID = templateID.Int64, nodeIDs.String, userID.Int64
+		l.TemplateID, l.NodeIDs, l.UserID, l.GroupsJSON = templateID.Int64, nodeIDs.String, userID.Int64, groups.String
 		list = append(list, l)
 	}
 	return list, rows.Err()
 }
 
 func (s *Store) SubscribeLinkByID(ctx context.Context, id int64) (SubscribeLink, error) {
-	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " WHERE " + s.quote("id") + "=? LIMIT 1"
+	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "groups_json", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " WHERE " + s.quote("id") + "=? LIMIT 1"
 	var l SubscribeLink
 	var templateID sql.NullInt64
 	var nodeIDs sql.NullString
-		var userID sql.NullInt64
-	err := s.db.QueryRowContext(ctx, s.bind(query), id).Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &nodeIDs, &userID, &l.Shared, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime)
-	l.TemplateID, l.NodeIDs, l.UserID = templateID.Int64, nodeIDs.String, userID.Int64
+	var userID sql.NullInt64
+	var groups sql.NullString
+	err := s.db.QueryRowContext(ctx, s.bind(query), id).Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &nodeIDs, &userID, &l.Shared, &groups, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime)
+	l.TemplateID, l.NodeIDs, l.UserID, l.GroupsJSON = templateID.Int64, nodeIDs.String, userID.Int64, groups.String
 	return l, err
 }
 
 // SubscribeLinkByToken 公开下载端点用:只认 status=1 且未过期的。
 func (s *Store) SubscribeLinkByToken(ctx context.Context, token string) (SubscribeLink, error) {
-	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " WHERE " + s.quote("token") + "=? AND " + s.quote("status") + "=1 LIMIT 1"
+	query := "SELECT " + s.columns("id", "name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "groups_json", "expire_at", "visit_count", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_link") + " WHERE " + s.quote("token") + "=? AND " + s.quote("status") + "=1 LIMIT 1"
 	var l SubscribeLink
 	var templateID sql.NullInt64
 	var nodeIDs sql.NullString
-		var userID sql.NullInt64
-	err := s.db.QueryRowContext(ctx, s.bind(query), token).Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &nodeIDs, &userID, &l.Shared, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime)
-	l.TemplateID, l.NodeIDs, l.UserID = templateID.Int64, nodeIDs.String, userID.Int64
+	var userID sql.NullInt64
+	var groups sql.NullString
+	err := s.db.QueryRowContext(ctx, s.bind(query), token).Scan(&l.ID, &l.Name, &l.Token, &l.Format, &templateID, &l.RulesetIDs, &nodeIDs, &userID, &l.Shared, &groups, &l.ExpireAt, &l.VisitCount, &l.Status, &l.CreatedTime, &l.UpdatedTime)
+	l.TemplateID, l.NodeIDs, l.UserID, l.GroupsJSON = templateID.Int64, nodeIDs.String, userID.Int64, groups.String
 	if err != nil {
 		return l, err
 	}
@@ -390,7 +395,7 @@ func (s *Store) CreateSubscribeLink(ctx context.Context, input LinkInput) (Subsc
 	}
 	now := time.Now().UnixMilli()
 	// template_id / user_id 为 0 时写 NULL;占位符顺序必须跟列顺序一致。
-	query := "INSERT INTO " + s.quote("subscribe_link") + " (" + s.columns("name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "expire_at", "created_time", "updated_time") + ") VALUES (?,?,?,?,?,?,?,?,?,?)"
+	query := "INSERT INTO " + s.quote("subscribe_link") + " (" + s.columns("name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "groups_json", "expire_at", "created_time", "updated_time") + ") VALUES (?,?,?,?,?,?,?,?,?,?)"
 	var templateID, userID any
 	if input.TemplateID > 0 {
 		templateID = input.TemplateID
@@ -398,7 +403,11 @@ func (s *Store) CreateSubscribeLink(ctx context.Context, input LinkInput) (Subsc
 	if input.UserID > 0 {
 		userID = input.UserID
 	}
-	res, err := s.db.ExecContext(ctx, s.bind(query), input.Name, token, input.Format, templateID, input.RulesetIDs, input.NodeIDs, userID, input.Shared, input.ExpireAt, now, now)
+	var groups any
+	if input.GroupsJSON != "" {
+		groups = input.GroupsJSON
+	}
+	res, err := s.db.ExecContext(ctx, s.bind(query), input.Name, token, input.Format, templateID, input.RulesetIDs, input.NodeIDs, userID, input.Shared, groups, input.ExpireAt, now, now)
 	if err != nil {
 		return SubscribeLink{}, err
 	}
@@ -414,8 +423,12 @@ func (s *Store) CreateSubscribeLink(ctx context.Context, input LinkInput) (Subsc
 
 func (s *Store) UpdateSubscribeLink(ctx context.Context, id int64, input LinkInput) (SubscribeLink, error) {
 	now := time.Now().UnixMilli()
-	set := s.quote("name") + "=?, " + s.quote("format") + "=?, " + s.quote("ruleset_ids") + "=?, " + s.quote("node_ids") + "=?, " + s.quote("shared") + "=?, " + s.quote("expire_at") + "=?, " + s.quote("updated_time") + "=?"
-	args := []any{input.Name, input.Format, input.RulesetIDs, input.NodeIDs, input.Shared, input.ExpireAt, now}
+	set := s.quote("name") + "=?, " + s.quote("format") + "=?, " + s.quote("ruleset_ids") + "=?, " + s.quote("node_ids") + "=?, " + s.quote("shared") + "=?, " + s.quote("groups_json") + "=?, " + s.quote("expire_at") + "=?, " + s.quote("updated_time") + "=?"
+	groupsValue := any(nil)
+	if input.GroupsJSON != "" {
+		groupsValue = input.GroupsJSON
+	}
+	args := []any{input.Name, input.Format, input.RulesetIDs, input.NodeIDs, input.Shared, groupsValue, input.ExpireAt, now}
 	if input.TemplateID > 0 {
 		set += ", " + s.quote("template_id") + "=?"
 		args = append(args, input.TemplateID)

@@ -418,6 +418,34 @@ func validateLinkInput(input *store.LinkInput) string {
 		input.Format = "clash"
 	}
 	input.RulesetIDs = store.NormalizeRulesetIDs(input.RulesetIDs)
+	// 分组订阅:一条链接里多个「节点组 + 各自规则」,此时 nodeIds/rulesetIds 由分组自己带。
+	if strings.TrimSpace(input.GroupsJSON) != "" {
+		groups, err := store.ParseGroups(input.GroupsJSON)
+		if err != nil {
+			return "分组配置格式不正确"
+		}
+		if len(groups) > 20 {
+			return "分组最多 20 个"
+		}
+		normalized, err := store.MarshalGroups(groups)
+		if err != nil {
+			return "分组配置格式不正确"
+		}
+		if normalized == "" {
+			return "至少给一个分组挑好节点"
+		}
+		input.GroupsJSON = normalized
+		input.NodeIDs = ""
+		input.RulesetIDs = ""
+		input.Shared = 0
+		if input.UserID > 0 {
+			return "分组订阅不能绑定单个账号"
+		}
+		if len(input.GroupsJSON) > 64<<10 {
+			return "分组配置太大"
+		}
+		return ""
+	}
 	if input.UserID > 0 {
 		// 归属账号模式:节点由账号自己决定,忽略手挑的节点。
 		input.NodeIDs = ""
@@ -566,6 +594,38 @@ func (a *API) panelOutputFor(ctx context.Context, link store.SubscribeLink) (sto
 		}
 		return output, true
 	}
+	if groups, err := store.ParseGroups(link.GroupsJSON); err == nil && len(groups) > 0 {
+		ids := store.GroupNodeIDs(groups)
+		nodes, err := a.store.PanelNodesByIDs(ctx, ids)
+		if err != nil || len(nodes) == 0 {
+			return store.SubscriptionOutput{}, false
+		}
+		output := store.SubscriptionOutput{
+			Usable:       true,
+			Entries:      []store.SubscriptionEntry{},
+			CustomLinks:  make([]string, 0, len(nodes)),
+			CustomParsed: make([]map[string]any, 0, len(nodes)),
+			GroupNodes:   make(map[int64]string, len(nodes)),
+		}
+		for _, node := range nodes {
+			if node.RawLink != "" {
+				output.CustomLinks = append(output.CustomLinks, node.RawLink)
+			}
+			parsed := node.Parsed
+			if parsed == nil {
+				parsed = map[string]any{}
+			}
+			if _, ok := parsed["protocol"]; !ok {
+				parsed["protocol"] = node.Protocol
+			}
+			if _, ok := parsed["name"]; !ok || parsed["name"] == "" {
+				parsed["name"] = node.Name
+			}
+			output.CustomParsed = append(output.CustomParsed, parsed)
+			output.GroupNodes[node.ID] = fmt.Sprint(parsed["name"])
+		}
+		return output, true
+	}
 	if ids := parsePanelNodeIDs(link.NodeIDs); len(ids) > 0 {
 		nodes, err := a.store.PanelNodesByIDs(ctx, ids)
 		if err != nil || len(nodes) == 0 {
@@ -642,7 +702,7 @@ func (a *API) panelSubscription(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(body))
 		return
 	}
-	yaml := renderPanelClashYAML(r.Context(), a.store, link, proxies)
+	yaml := renderPanelClashYAML(r.Context(), a.store, link, proxies, nil)
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 	w.Header().Set("Subscription-Userinfo", subscriptionUserinfo(output))
 	_, _ = w.Write([]byte(yaml))
@@ -690,7 +750,10 @@ func panelTemplateFor(ctx context.Context, s panelStore, link store.SubscribeLin
 //   - YAML 文本(妙妙屋 rule_templates 风格):文本级替换 proxies: null 与
 //     __PROXY_NODES__ / __PROXY_PROVIDERS__ 占位符 —— 不引入 YAML 依赖也能
 //     原样保留上游模板里的 DNS、rule-providers 等高级段落。
-func renderPanelClashYAML(ctx context.Context, s panelStore, link store.SubscribeLink, proxies []map[string]any) string {
+func renderPanelClashYAML(ctx context.Context, s panelStore, link store.SubscribeLink, proxies []map[string]any, groupNodes map[int64]string) string {
+	if groups, err := store.ParseGroups(link.GroupsJSON); err == nil && len(groups) > 0 {
+		return renderGroupClashYAML(groups, proxies, groupNodes)
+	}
 	template := panelTemplateFor(ctx, s, link)
 	names := make([]string, 0, len(proxies))
 	for _, p := range proxies {
@@ -1311,4 +1374,120 @@ func (a *API) panelRulesetFile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Last-Modified", time.UnixMilli(updated).UTC().Format(http.TimeFormat))
 	}
 	_, _ = w.Write([]byte(content))
+}
+
+// renderGroupClashYAML 分组订阅的输出:每个分组一个策略组,分组里的规则集行
+// 把策略改写成组名,于是「日本1 走广告拦截+谷歌+油管」「日本 走电报+苹果」互不干扰。
+//
+// 分组模式下不用模板的 proxy-groups/rules(模型对不上),但保留模板里的 DNS 等基础设置
+// 意义也不大 —— 直接给一份干净骨架,避免两套规则打架。
+func renderGroupClashYAML(groups []store.SubscribeGroup, proxies []map[string]any, groupNodes map[int64]string) string {
+	names := make([]string, 0, len(proxies))
+	for _, proxy := range proxies {
+		names = append(names, fmt.Sprint(proxy["name"]))
+	}
+	used := map[string]int{"节点选择": 1, "DIRECT": 1, "REJECT": 1, "GLOBAL": 1, "自动选择": 1, "漏网之鱼": 1}
+	groupDefs := []any{}
+	groupNames := []string{}
+	ruleLines := []string{}
+	for _, group := range groups {
+		members := []string{}
+		seen := map[string]struct{}{}
+		for _, rawID := range group.NodeIDs {
+			id, err := strconv.ParseInt(strings.TrimSpace(rawID), 10, 64)
+			if err != nil {
+				continue
+			}
+			name, ok := groupNodes[id]
+			if !ok || name == "" {
+				continue
+			}
+			if _, exists := seen[name]; exists {
+				continue
+			}
+			seen[name] = struct{}{}
+			members = append(members, name)
+		}
+		if len(members) == 0 {
+			continue
+		}
+		groupName := uniqueName(strings.TrimSpace(group.Name), used)
+		groupDefs = append(groupDefs, map[string]any{"name": groupName, "type": "select", "proxies": members})
+		groupNames = append(groupNames, groupName)
+		for _, line := range rulesetLinesByIDs(group.RulesetIDs) {
+			if rewritten := rewriteRulePolicy(line, groupName); rewritten != "" {
+				ruleLines = append(ruleLines, rewritten)
+			}
+		}
+	}
+	if len(groupDefs) == 0 {
+		return defaultPanelClashYAML(proxies, names)
+	}
+	selector := append([]string{}, groupNames...)
+	selector = append(selector, "DIRECT")
+	groupDefs = append(groupDefs, map[string]any{"name": "节点选择", "type": "select", "proxies": selector})
+
+	rules := []string{
+		"DOMAIN-SUFFIX,local,DIRECT",
+		"IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+		"IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+		"IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+		"IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
+	}
+	rules = append(rules, ruleLines...)
+	rules = append(rules, "MATCH,节点选择")
+
+	root := map[string]any{
+		"mixed-port": 7890, "allow-lan": false, "mode": "rule", "log-level": "info",
+		"dns": map[string]any{
+			"enable": true, "ipv6": false, "enhanced-mode": "fake-ip", "fake-ip-range": "198.18.0.1/16",
+			"nameserver": []string{"223.5.5.5", "119.29.29.29"},
+		},
+		"proxies":       proxies,
+		"proxy-groups":  groupDefs,
+		"rules":         rules,
+	}
+	encoded, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return defaultPanelClashYAML(proxies, names)
+	}
+	return string(encoded)
+}
+
+// rulesetLinesByIDs 把一组规则集 id 展平成规则行。
+func rulesetLinesByIDs(ids []string) []string {
+	lines := []string{}
+	for _, rawID := range ids {
+		id, err := strconv.ParseInt(strings.TrimSpace(rawID), 10, 64)
+		if err != nil {
+			continue
+		}
+		_, content, err := panelStoreRulesetContent(id)
+		if err != nil || content == "" {
+			continue
+		}
+		for _, line := range strings.Split(content, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+				continue
+			}
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// rewriteRulePolicy 把规则行的策略改成 groupName;REJECT / DIRECT 这类内置策略保持原样。
+func rewriteRulePolicy(line, groupName string) string {
+	parts := strings.Split(line, ",")
+	if len(parts) < 3 {
+		return ""
+	}
+	policy := strings.TrimSpace(parts[2])
+	switch strings.ToUpper(policy) {
+	case "REJECT", "REJECT-DROP", "DIRECT", "PASS", "COMPATIBLE":
+		return line
+	}
+	parts[2] = groupName
+	return strings.Join(parts, ",")
 }

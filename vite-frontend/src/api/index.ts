@@ -257,6 +257,8 @@ export interface PanelLink {
   userId?: number;
   /** 1 = 订阅集(没账号没节点),用户可以在「我的订阅链接」里套用 */
   shared?: number;
+  /** 分组订阅:JSON 字符串 [{name,nodeIds,rulesetIds}] */
+  groupsJson?: string;
   expireAt: number;
   visitCount: number;
   status: number;
@@ -270,6 +272,9 @@ export interface PanelLinkPayload {
   templateId?: number | string;
   rulesetIds?: string;
   nodeIds?: string;
+  /** 分组订阅:JSON 字符串,有它就不用 nodeIds/rulesetIds */
+  groupsJson?: string;
+  userId?: number;
   expireAt?: number;
 }
 export const createPanelLink = (data: PanelLinkPayload) => Network.post("/panel/link/create", data);

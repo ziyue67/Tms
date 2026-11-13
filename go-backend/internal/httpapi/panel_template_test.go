@@ -292,3 +292,45 @@ func TestFirstSharedSet(t *testing.T) {
 		t.Fatal("没有订阅集时不该返回 true")
 	}
 }
+
+// 分组的策略改写:代理类规则改成组名,REJECT / DIRECT 这类内置策略保持原样。
+func TestRewriteRulePolicy(t *testing.T) {
+	if got := rewriteRulePolicy("DOMAIN-SUFFIX,google.com,🚀 手动选择", "日本1"); got != "DOMAIN-SUFFIX,google.com,日本1" {
+		t.Fatalf("代理规则没改写成组名: %s", got)
+	}
+	if got := rewriteRulePolicy("DOMAIN-SUFFIX,ads.example,REJECT", "日本1"); got != "DOMAIN-SUFFIX,ads.example,REJECT" {
+		t.Fatalf("REJECT 不该被改写: %s", got)
+	}
+	if got := rewriteRulePolicy("GEOIP,CN,DIRECT,no-resolve", "日本1"); got != "GEOIP,CN,DIRECT,no-resolve" {
+		t.Fatalf("DIRECT 不该被改写: %s", got)
+	}
+	if got := rewriteRulePolicy("bad-line", "日本1"); got != "" {
+		t.Fatal("不完整规则应丢弃")
+	}
+}
+
+// 一条链接两个分组:每个分组一个策略组,节点各归各的。
+func TestRenderGroupClashYAML(t *testing.T) {
+	proxies := []map[string]any{
+		{"name": "日本1", "type": "hysteria2", "server": "1.1.1.1", "port": 443},
+		{"name": "日本2", "type": "vless", "server": "2.2.2.2", "port": 443},
+	}
+	groups := []store.SubscribeGroup{
+		{Name: "组A", NodeIDs: []string{"101"}, RulesetIDs: []string{}},
+		{Name: "组B", NodeIDs: []string{"102"}, RulesetIDs: []string{}},
+	}
+	out := renderGroupClashYAML(groups, proxies, map[int64]string{101: "日本1", 102: "日本2"})
+
+	var root map[string]any
+	if err := json.Unmarshal([]byte(out), &root); err != nil {
+		t.Fatalf("输出不是合法 JSON: %v", err)
+	}
+	groupDefs, _ := root["proxy-groups"].([]any)
+	if len(groupDefs) != 3 {
+		t.Fatalf("应该有 2 个分组策略组 + 节点选择,实际 %d", len(groupDefs))
+	}
+	rules, _ := root["rules"].([]any)
+	if len(rules) == 0 || rules[len(rules)-1] != "MATCH,节点选择" {
+		t.Fatalf("最后一条应该是 MATCH,节点选择: %v", rules)
+	}
+}

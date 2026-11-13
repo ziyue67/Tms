@@ -32,6 +32,8 @@ func Migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 		{"subscribe_link", "user_id", "BIGINT NULL"},
 		// 订阅集:没有人也没有节点 = 一套「模板 + 规则」的定义,用户在我的订阅链接里套用
 		{"subscribe_link", "shared", "INTEGER NOT NULL DEFAULT 0"},
+		// 分组订阅:一条链接里多个「节点组 + 各自规则」,存 JSON 数组。
+		{"subscribe_link", "groups_json", "TEXT NULL"},
 	} {
 		if err := m.addColumn(ctx, column); err != nil {
 			return err
@@ -272,6 +274,6 @@ func panelTables(dialect Dialect) map[string]string {
 		// client 是客户端类型(与面板模板管理的分标签一致),builtin=1 为内置模板。
 		"subscribe_template": fmt.Sprintf("(id %s PRIMARY KEY, name VARCHAR(128) NOT NULL, client VARCHAR(16) NOT NULL DEFAULT 'clash', version VARCHAR(8) NOT NULL DEFAULT 'v3', is_default INTEGER NOT NULL DEFAULT 0, visible INTEGER NOT NULL DEFAULT 1, builtin INTEGER NOT NULL DEFAULT 0, content %s, remark VARCHAR(255) NOT NULL DEFAULT '', status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL)", id, textType),
 		// 订阅链接:一条链接 = 一个 token + 输出格式 + 绑定的模板/规则集集合(逗号分隔 id)。
-		"subscribe_link": fmt.Sprintf("(id %s PRIMARY KEY, name VARCHAR(128) NOT NULL, token VARCHAR(64) NOT NULL UNIQUE, format VARCHAR(16) NOT NULL DEFAULT 'clash', template_id BIGINT, ruleset_ids VARCHAR(500) NOT NULL DEFAULT '', node_ids VARCHAR(4000) NULL, user_id BIGINT NULL, shared INTEGER NOT NULL DEFAULT 0, expire_at BIGINT NOT NULL DEFAULT 0, visit_count BIGINT NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL)", id),
+		"subscribe_link": fmt.Sprintf("(id %s PRIMARY KEY, name VARCHAR(128) NOT NULL, token VARCHAR(64) NOT NULL UNIQUE, format VARCHAR(16) NOT NULL DEFAULT 'clash', template_id BIGINT, ruleset_ids VARCHAR(500) NOT NULL DEFAULT '', node_ids VARCHAR(4000) NULL, user_id BIGINT NULL, shared INTEGER NOT NULL DEFAULT 0, groups_json TEXT NULL, expire_at BIGINT NOT NULL DEFAULT 0, visit_count BIGINT NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 1, created_time BIGINT NOT NULL, updated_time BIGINT NOT NULL)", id),
 	}
 }
