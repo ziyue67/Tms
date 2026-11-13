@@ -437,7 +437,10 @@ func validateLinkInput(input *store.LinkInput) string {
 		input.GroupsJSON = normalized
 		input.NodeIDs = ""
 		input.RulesetIDs = ""
-		input.Shared = 0
+		// shared 由前端显式给:勾「全体用户」时是全局订阅集,否则是带独立地址的分组订阅。
+		if input.Shared != 0 {
+			input.Shared = 1
+		}
 		if input.UserID > 0 {
 			return "分组订阅不能绑定单个账号"
 		}
@@ -595,36 +598,7 @@ func (a *API) panelOutputFor(ctx context.Context, link store.SubscribeLink) (sto
 		return output, true
 	}
 	if groups, err := store.ParseGroups(link.GroupsJSON); err == nil && len(groups) > 0 {
-		ids := store.GroupNodeIDs(groups)
-		nodes, err := a.store.PanelNodesByIDs(ctx, ids)
-		if err != nil || len(nodes) == 0 {
-			return store.SubscriptionOutput{}, false
-		}
-		output := store.SubscriptionOutput{
-			Usable:       true,
-			Entries:      []store.SubscriptionEntry{},
-			CustomLinks:  make([]string, 0, len(nodes)),
-			CustomParsed: make([]map[string]any, 0, len(nodes)),
-			GroupNodes:   make(map[int64]string, len(nodes)),
-		}
-		for _, node := range nodes {
-			if node.RawLink != "" {
-				output.CustomLinks = append(output.CustomLinks, node.RawLink)
-			}
-			parsed := node.Parsed
-			if parsed == nil {
-				parsed = map[string]any{}
-			}
-			if _, ok := parsed["protocol"]; !ok {
-				parsed["protocol"] = node.Protocol
-			}
-			if _, ok := parsed["name"]; !ok || parsed["name"] == "" {
-				parsed["name"] = node.Name
-			}
-			output.CustomParsed = append(output.CustomParsed, parsed)
-			output.GroupNodes[node.ID] = fmt.Sprint(parsed["name"])
-		}
-		return output, true
+		return a.nodesOutput(ctx, store.GroupNodeIDs(groups))
 	}
 	if ids := parsePanelNodeIDs(link.NodeIDs); len(ids) > 0 {
 		nodes, err := a.store.PanelNodesByIDs(ctx, ids)
@@ -1303,6 +1277,39 @@ func (a *API) myPanelOptions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeResponse(w, OK(map[string]any{"templates": visible, "rulesets": rulesets, "sets": sets}))
+}
+
+// nodesOutput 按节点 id 造订阅输出(分组订阅和全局订阅集共用)。
+func (a *API) nodesOutput(ctx context.Context, ids []int64) (store.SubscriptionOutput, bool) {
+	nodes, err := a.store.PanelNodesByIDs(ctx, ids)
+	if err != nil || len(nodes) == 0 {
+		return store.SubscriptionOutput{}, false
+	}
+	output := store.SubscriptionOutput{
+		Usable:       true,
+		Entries:      []store.SubscriptionEntry{},
+		CustomLinks:  make([]string, 0, len(nodes)),
+		CustomParsed: make([]map[string]any, 0, len(nodes)),
+		GroupNodes:   make(map[int64]string, len(nodes)),
+	}
+	for _, node := range nodes {
+		if node.RawLink != "" {
+			output.CustomLinks = append(output.CustomLinks, node.RawLink)
+		}
+		parsed := node.Parsed
+		if parsed == nil {
+			parsed = map[string]any{}
+		}
+		if _, ok := parsed["protocol"]; !ok {
+			parsed["protocol"] = node.Protocol
+		}
+		if _, ok := parsed["name"]; !ok || parsed["name"] == "" {
+			parsed["name"] = node.Name
+		}
+		output.CustomParsed = append(output.CustomParsed, parsed)
+		output.GroupNodes[node.ID] = fmt.Sprint(parsed["name"])
+	}
+	return output, true
 }
 
 // firstSharedSet 取管理员配的订阅集(没有账号、没有节点的那个链接)。

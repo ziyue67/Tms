@@ -14,6 +14,7 @@ import {
 } from "@heroui/table";
 import { Spinner } from "@heroui/spinner";
 import { Snippet } from "@heroui/snippet";
+import { Switch } from "@heroui/switch";
 import toast from "react-hot-toast";
 import PageWrapper from "@/components/page-wrapper";
 import { CopyIcon, DeleteIcon, PlusIcon } from "@/components/icons";
@@ -82,6 +83,8 @@ interface FormState {
   userId: string;
   nodeIds: string[];
   groups: GroupForm[];
+  /** 分组模式:应用到所有用户的「我的订阅」(全局订阅集) */
+  shared: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -92,6 +95,7 @@ const EMPTY_FORM: FormState = {
   userId: "",
   nodeIds: [],
   groups: [{ name: "分组1", nodeIds: [], rulesetIds: [] }],
+  shared: false,
 };
 
 type ViewMode = "cards" | "list" | "aggregate" | "create";
@@ -156,6 +160,7 @@ export default function SubscribeLinksPage() {
     setForm({
       ...EMPTY_FORM,
       templateId: defaultTemplateId,
+      shared: true,
       groups: [
         {
           name: "分组1",
@@ -204,6 +209,7 @@ export default function SubscribeLinksPage() {
           : "",
       nodeIds: item.nodeIds ? item.nodeIds.split(",").filter(Boolean) : [],
       groups: groups.length > 0 ? groups : EMPTY_FORM.groups,
+      shared: item.shared === 1,
     });
     setView("create");
   };
@@ -291,6 +297,7 @@ export default function SubscribeLinksPage() {
         rulesetIds: "",
         templateId: 0,
         userId: 0,
+        shared: form.shared ? 1 : 0,
         expireAt: editing?.expireAt || 0,
       };
     } else {
@@ -752,6 +759,18 @@ export default function SubscribeLinksPage() {
           })}
         </div>
       </div>
+
+      {form.mode === "custom" && (
+        <div className="flex items-center gap-3 rounded-medium border border-default-200 px-4 py-3">
+          <Switch isSelected={form.shared} onValueChange={(value) => setForm({ ...form, shared: value })} />
+          <div>
+            <div className="text-sm">应用到所有用户的「我的订阅」</div>
+            <div className="text-xs text-default-400">
+              勾上 = 全局订阅集:每个用户自己的 Clash 订阅链接都会返回这套分组和规则;不勾 = 只有这条链接的地址能用
+            </div>
+          </div>
+        </div>
+      )}
 
       {form.mode === "custom" ? groupEditor : templateEditor}
 
