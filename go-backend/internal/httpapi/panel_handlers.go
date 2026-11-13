@@ -1400,6 +1400,24 @@ func renderGroupClashYAML(groups []store.SubscribeGroup, proxies []map[string]an
 	for _, group := range groups {
 		members := []string{}
 		seen := map[string]struct{}{}
+		// 关键词分组:按名字把节点收进来(用户自己的线路也在这里)
+		for _, keyword := range strings.Split(group.Match, ",") {
+			keyword = strings.ToLower(strings.TrimSpace(keyword))
+			if keyword == "" {
+				continue
+			}
+			for _, proxy := range proxies {
+				name := fmt.Sprint(proxy["name"])
+				if !strings.Contains(strings.ToLower(name), keyword) {
+					continue
+				}
+				if _, exists := seen[name]; exists {
+					continue
+				}
+				seen[name] = struct{}{}
+				members = append(members, name)
+			}
+		}
 		for _, rawID := range group.NodeIDs {
 			id, err := strconv.ParseInt(strings.TrimSpace(rawID), 10, 64)
 			if err != nil {

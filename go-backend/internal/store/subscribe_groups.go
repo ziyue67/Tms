@@ -14,6 +14,9 @@ type SubscribeGroup struct {
 	Name       string   `json:"name"`
 	NodeIDs    []string `json:"nodeIds"`
 	RulesetIDs []string `json:"rulesetIds"`
+	// Match 关键词(逗号分隔):按名字把「用户自己的线路」收进这个组,
+	// 例如 香港,HK。全局订阅集靠它做到「每个用户收自己的节点」。
+	Match string `json:"match,omitempty"`
 }
 
 // ParseGroups 解析 groups_json;空串返回 nil。
@@ -34,7 +37,9 @@ func MarshalGroups(groups []SubscribeGroup) (string, error) {
 	cleaned := make([]SubscribeGroup, 0, len(groups))
 	for _, group := range groups {
 		name := strings.TrimSpace(group.Name)
-		if name == "" || len(group.NodeIDs) == 0 {
+		match := strings.TrimSpace(group.Match)
+		// 既没勾节点、也没写关键词的分组没有意义,丢掉
+		if name == "" || (len(group.NodeIDs) == 0 && match == "") {
 			continue
 		}
 		if len(name) > 64 {
@@ -44,6 +49,7 @@ func MarshalGroups(groups []SubscribeGroup) (string, error) {
 			Name:       name,
 			NodeIDs:    dedupeStrings(group.NodeIDs),
 			RulesetIDs: dedupeStrings(group.RulesetIDs),
+			Match:      strings.TrimSpace(group.Match),
 		})
 	}
 	if len(cleaned) == 0 {

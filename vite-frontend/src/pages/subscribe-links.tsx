@@ -73,6 +73,8 @@ interface GroupForm {
   name: string;
   nodeIds: string[];
   rulesetIds: string[];
+  /** 关键词(逗号分隔):按名字收货,全局订阅集靠它收每个用户自己的线路 */
+  match?: string;
 }
 
 interface FormState {
@@ -181,6 +183,7 @@ export default function SubscribeLinksPage() {
           name: group.name,
           nodeIds: (group.nodeIds || []).map(String),
           rulesetIds: (group.rulesetIds || []).map(String),
+          match: group.match || "",
         }));
       } catch {
         groups = [];
@@ -280,9 +283,11 @@ export default function SubscribeLinksPage() {
     }
     let payload;
     if (form.mode === "custom") {
-      const groups = form.groups.filter((group) => group.nodeIds.length > 0);
+      const groups = form.groups.filter(
+        (group) => group.nodeIds.length > 0 || (group.match || "").trim() !== ""
+      );
       if (groups.length === 0) {
-        toast.error("每个分组至少挑一个节点");
+        toast.error("每个分组至少挑一个节点,或者写一个关键词");
         return;
       }
       if (groups.some((group) => !group.name.trim())) {

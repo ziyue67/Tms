@@ -43,11 +43,31 @@ func (a *API) openClashSubscription(w http.ResponseWriter, r *http.Request) {
 	// 管理员在「订阅链接」里配了订阅集(模板 + 规则集)时,用户自己那条老订阅链接
 	// 直接按这套规则输出 —— 用户不用再去建一条,也不用做任何选择。
 	if set, ok := a.firstSharedSet(r.Context()); ok {
-		// 全局订阅集带分组时:节点用订阅集自己配的那些,规则按分组改写。
+		// 全局订阅集带分组时:把「用户自己的线路」和「订阅集里勾的节点」合在一起,
+		// 分组按关键词(香港/日本/家宽…)从里面挑 —— 这样每个用户拉到的都是自己的节点。
 		if groups, err := store.ParseGroups(set.GroupsJSON); err == nil && len(groups) > 0 {
-			if output, ok := a.nodesOutput(r.Context(), store.GroupNodeIDs(groups)); ok {
+			merged := append([]map[string]any{}, proxies...)
+			seen := make(map[string]struct{}, len(merged))
+			for _, proxy := range merged {
+				seen[fmt.Sprint(proxy["name"])] = struct{}{}
+			}
+			groupNodes := map[int64]string{}
+			if ids := store.GroupNodeIDs(groups); len(ids) > 0 {
+				if output, ok := a.nodesOutput(r.Context(), ids); ok {
+					for _, proxy := range buildClashProxies(output) {
+						name := fmt.Sprint(proxy["name"])
+						if _, exists := seen[name]; exists {
+							continue
+						}
+						seen[name] = struct{}{}
+						merged = append(merged, proxy)
+					}
+					groupNodes = output.GroupNodes
+				}
+			}
+			if len(merged) > 0 {
 				w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
-				_, _ = w.Write([]byte(renderGroupClashYAML(groups, buildClashProxies(output), output.GroupNodes)))
+				_, _ = w.Write([]byte(renderGroupClashYAML(groups, merged, groupNodes)))
 				return
 			}
 		}
