@@ -44,7 +44,7 @@ import {
  *
  * 两种建法:
  *  - 自定义规则(分组):一条链接里多个「节点组 + 各自规则」,每个分组在客户端里是一个策略组;
- *    节点只能属于一个分组 —— 已被别的分组占用的节点会置灰,「全选」只勾还没分配的;
+ *    同一个节点可以放进多个分组(客户端里多个策略组都包含它),互不冲突;
  *  - 使用模板:一批节点 + 一份模板(旧行为);「全体用户」是一套全局规则。
  *
  * custom_node.id 是 64 位雪花值,全程按字符串处理。
@@ -150,19 +150,6 @@ export default function SubscribeLinksPage() {
     const byDefault = templates.find((tpl) => tpl.isDefault === 1);
     return byDefault ? String(byDefault.id) : "";
   }, [templates]);
-
-  // 每个分组已占用的节点 → 别的分组里要置灰
-  const ownerOf = useCallback(
-    (nodeId: string) =>
-      form.groups.findIndex((group) => group.nodeIds.includes(nodeId)),
-    [form.groups],
-  );
-
-  const assignedCount = useMemo(() => {
-    const set = new Set<string>();
-    form.groups.forEach((group) => group.nodeIds.forEach((id) => set.add(id)));
-    return set.size;
-  }, [form.groups]);
 
   const openCreate = () => {
     setEditing(null);
@@ -462,10 +449,10 @@ export default function SubscribeLinksPage() {
   const groupEditor = (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2 text-xs text-default-400">
+        <span>共 {enabledNodes.length} 个可用节点</span>
         <span>
-          节点已分配 {assignedCount} / {enabledNodes.length}
+          · 同一个节点可以放进多个分组(客户端里就是多个策略组都包含它)
         </span>
-        <span>· 同一个节点只能属于一个分组,没分配的在每个分组里都能选</span>
       </div>
 
       {form.groups.map((group, index) => (
@@ -500,7 +487,7 @@ export default function SubscribeLinksPage() {
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs text-default-500">
-                  选择节点(别组已用的置灰)
+                  选择节点(可重复用)
                 </span>
                 <div className="flex gap-1">
                   <Button
@@ -508,14 +495,11 @@ export default function SubscribeLinksPage() {
                     variant="light"
                     onPress={() =>
                       updateGroup(index, {
-                        // 全选只勾「还没被任何分组占用」的节点,已经在别组的不动
-                        nodeIds: enabledNodes
-                          .filter((node) => ownerOf(node.id) === -1)
-                          .map((node) => node.id),
+                        nodeIds: enabledNodes.map((node) => node.id),
                       })
                     }
                   >
-                    全选空闲节点
+                    全选
                   </Button>
                   <Button
                     size="sm"
@@ -532,46 +516,26 @@ export default function SubscribeLinksPage() {
                 </div>
               ) : (
                 <div className="grid max-h-44 grid-cols-1 gap-1 overflow-auto rounded-medium border border-default-200 p-2 md:grid-cols-2">
-                  {enabledNodes.map((node) => {
-                    const owner = ownerOf(node.id);
-                    const blocked = owner !== -1 && owner !== index;
-                    return (
-                      <label
-                        key={node.id}
-                        className={
-                          "flex items-center gap-2 rounded-small px-1.5 py-1 text-sm " +
-                          (blocked
-                            ? "cursor-not-allowed opacity-40"
-                            : "cursor-pointer hover:bg-default-50 dark:hover:bg-default-100/10")
+                  {enabledNodes.map((node) => (
+                    <label
+                      key={node.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-small px-1.5 py-1 text-sm hover:bg-default-50 dark:hover:bg-default-100/10"
+                      title={node.name}
+                    >
+                      <input
+                        checked={group.nodeIds.includes(node.id)}
+                        className="h-4 w-4 accent-primary"
+                        type="checkbox"
+                        onChange={() =>
+                          toggleInGroup(index, "nodeIds", node.id)
                         }
-                        title={
-                          blocked
-                            ? `已在「${form.groups[owner]?.name || "其它分组"}」`
-                            : node.name
-                        }
-                      >
-                        <input
-                          checked={group.nodeIds.includes(node.id)}
-                          className="h-4 w-4 accent-primary"
-                          disabled={blocked}
-                          type="checkbox"
-                          onChange={() =>
-                            toggleInGroup(index, "nodeIds", node.id)
-                          }
-                        />
-                        <span className="flex-1 truncate">{node.name}</span>
-                        {blocked ? (
-                          <span className="shrink-0 text-[10px] text-default-400">
-                            {form.groups[owner]?.name || "别组"}
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-default-400">
-                            {node.protocol}
-                          </span>
-                        )}
-                      </label>
-                    );
-                  })}
+                      />
+                      <span className="flex-1 truncate">{node.name}</span>
+                      <span className="text-[11px] text-default-400">
+                        {node.protocol}
+                      </span>
+                    </label>
+                  ))}
                 </div>
               )}
             </div>
