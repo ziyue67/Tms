@@ -46,7 +46,7 @@ type RulesetInput struct {
 }
 
 func (s *Store) Rulesets(ctx context.Context) ([]Ruleset, error) {
-	query := "SELECT " + s.columns("id", "name", "display_name", "source", "remote_url", "refresh_minutes", "last_fetch_at", "last_fetch_error", "status", "created_time", "updated_time", "LENGTH(content)") + " FROM " + s.quote("ruleset") + " ORDER BY " + s.quote("name")
+	query := "SELECT " + s.columns("id", "name") + ", COALESCE(" + s.quote("display_name") + ",''), COALESCE(" + s.quote("source") + ",'manual'), " + s.quote("remote_url") + ", COALESCE(" + s.quote("refresh_minutes") + ",0), " + s.quote("last_fetch_at") + ", COALESCE(" + s.quote("last_fetch_error") + ",''), COALESCE(" + s.quote("status") + ",1), " + s.quote("created_time") + ", " + s.quote("updated_time") + ", LENGTH(COALESCE(" + s.quote("content") + ",'')) FROM " + s.quote("ruleset") + " ORDER BY " + s.quote("name")
 	rows, err := s.db.QueryContext(ctx, s.bind(query))
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func (s *Store) Rulesets(ctx context.Context) ([]Ruleset, error) {
 }
 
 func (s *Store) RulesetByID(ctx context.Context, id int64) (Ruleset, string, error) {
-	query := "SELECT " + s.columns("id", "name", "display_name", "source", "remote_url", "refresh_minutes", "last_fetch_at", "last_fetch_error", "status", "created_time", "updated_time", "content") + " FROM " + s.quote("ruleset") + " WHERE " + s.quote("id") + "=? LIMIT 1"
+	query := "SELECT " + s.columns("id", "name") + ", COALESCE(" + s.quote("display_name") + ",''), COALESCE(" + s.quote("source") + ",'manual'), " + s.quote("remote_url") + ", COALESCE(" + s.quote("refresh_minutes") + ",0), " + s.quote("last_fetch_at") + ", COALESCE(" + s.quote("last_fetch_error") + ",''), COALESCE(" + s.quote("status") + ",1), " + s.quote("created_time") + ", " + s.quote("updated_time") + ", COALESCE(" + s.quote("content") + ",'') FROM " + s.quote("ruleset") + " WHERE " + s.quote("id") + "=? LIMIT 1"
 	var r Ruleset
 	var remote sql.NullString
 	var fetched sql.NullInt64
@@ -84,14 +84,16 @@ func (s *Store) RulesetByID(ctx context.Context, id int64) (Ruleset, string, err
 func (s *Store) RulesetContentByName(ctx context.Context, name string) (string, int64, error) {
 	var content string
 	var updated int64
-	query := "SELECT " + s.columns("content", "updated_time") + " FROM " + s.quote("ruleset") + " WHERE " + s.quote("name") + "=? AND " + s.quote("status") + "=1 LIMIT 1"
+	query := "SELECT COALESCE(" + s.quote("content") + ",''), " + s.quote("updated_time") + " FROM " + s.quote("ruleset") + " WHERE " + s.quote("name") + "=? AND COALESCE(" + s.quote("status") + ",1)=1 LIMIT 1"
 	err := s.db.QueryRowContext(ctx, s.bind(query), name).Scan(&content, &updated)
 	return content, updated, err
 }
 
 // RulesetByName 启动播种时按名字判重。
 func (s *Store) RulesetByName(ctx context.Context, name string) (Ruleset, error) {
-	query := "SELECT " + s.columns("id", "name", "display_name", "source", "remote_url", "refresh_minutes", "last_fetch_at", "last_fetch_error", "status", "created_time", "updated_time", "LENGTH(content)") + " FROM " + s.quote("ruleset") + " WHERE " + s.quote("name") + "=? LIMIT 1"
+	// 用 COALESCE 兜住老库里的 NULL:扫成 NULL 会直接报错,播种就会误判「不存在」再插一次,
+	// 结果撞 ruleset_name_key 唯一键(PostgreSQL 23505)。
+	query := "SELECT " + s.columns("id", "name") + ", COALESCE(" + s.quote("display_name") + ",''), COALESCE(" + s.quote("source") + ",'manual'), " + s.quote("remote_url") + ", COALESCE(" + s.quote("refresh_minutes") + ",0), " + s.quote("last_fetch_at") + ", COALESCE(" + s.quote("last_fetch_error") + ",''), COALESCE(" + s.quote("status") + ",1), " + s.quote("created_time") + ", " + s.quote("updated_time") + ", LENGTH(COALESCE(" + s.quote("content") + ",'')) FROM " + s.quote("ruleset") + " WHERE " + s.quote("name") + "=? LIMIT 1"
 	var r Ruleset
 	var remote sql.NullString
 	var fetched sql.NullInt64
@@ -206,7 +208,7 @@ func (s *Store) SubscribeTemplateByID(ctx context.Context, id int64) (SubscribeT
 
 // SubscribeTemplateByName 内置模板去重/按名字恢复用。
 func (s *Store) SubscribeTemplateByName(ctx context.Context, name string) (SubscribeTemplate, error) {
-	query := "SELECT " + s.columns("id", "name", "client", "version", "is_default", "visible", "builtin", "content", "remark", "status", "created_time", "updated_time") + " FROM " + s.quote("subscribe_template") + " WHERE " + s.quote("name") + "=? ORDER BY " + s.quote("id") + " ASC LIMIT 1"
+	query := "SELECT " + s.columns("id", "name") + ", COALESCE(" + s.quote("client") + ",'clash'), COALESCE(" + s.quote("version") + ",'v3'), COALESCE(" + s.quote("is_default") + ",0), COALESCE(" + s.quote("visible") + ",1), COALESCE(" + s.quote("builtin") + ",0), COALESCE(" + s.quote("content") + ",''), COALESCE(" + s.quote("remark") + ",''), COALESCE(" + s.quote("status") + ",1), " + s.quote("created_time") + ", " + s.quote("updated_time") + " FROM " + s.quote("subscribe_template") + " WHERE " + s.quote("name") + "=? ORDER BY " + s.quote("id") + " ASC LIMIT 1"
 	var t SubscribeTemplate
 	err := s.db.QueryRowContext(ctx, s.bind(query), name).Scan(&t.ID, &t.Name, &t.Client, &t.Version, &t.IsDefault, &t.Visible, &t.Builtin, &t.Content, &t.Remark, &t.Status, &t.CreatedTime, &t.UpdatedTime)
 	return t, err

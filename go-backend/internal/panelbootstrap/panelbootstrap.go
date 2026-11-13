@@ -7,6 +7,7 @@ package panelbootstrap
 
 import (
 	"context"
+	"strings"
 	"fmt"
 
 	"github.com/ziyue67/tms/go-backend/internal/paneldefaults"
@@ -84,9 +85,26 @@ func Seed(ctx context.Context, s Store) (Result, error) {
 			Name: rs.Name, DisplayName: rs.DisplayName, Source: rs.Source,
 			RemoteURL: rs.RemoteURL, RefreshMinutes: rs.RefreshMinutes, Content: rs.Content,
 		}); err != nil {
+			// 并发播种 / 判重时字段扫失败都会走到这里;撞唯一键说明已经存在,跳过即可,
+			// 不能因为一条把剩下 20 多个分类全拦住。
+			if isDuplicateKey(err) {
+				continue
+			}
 			return result, fmt.Errorf("播种内置规则集 %s: %w", rs.Name, err)
 		}
 		result.RulesetsAdded++
 	}
 	return result, nil
+}
+
+// isDuplicateKey 判断唯一键冲突。MySQL 1062 / PostgreSQL 23505 / SQLite 都覆盖。
+func isDuplicateKey(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "duplicate") ||
+		strings.Contains(text, "23505") ||
+		strings.Contains(text, "unique constraint") ||
+		strings.Contains(text, "duplicate key")
 }

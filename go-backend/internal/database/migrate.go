@@ -59,6 +59,11 @@ func Migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			return err
 		}
 	}
+	// 老库是早期版本建的表,部分列没有默认值、留下 NULL;Go 侧扫进 string 会报错,
+	// 表现为「规则集列表 0 条」「播种撞唯一键」。这里把 NULL 统一补成默认值。
+	if err := m.normalizePanelDefaults(ctx); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, "DROP TABLE IF EXISTS "+m.quote("verification_code")); err != nil {
 		return err
 	}
@@ -187,6 +192,50 @@ func (m migrator) expandConfigValue(ctx context.Context) error {
 	}
 	return err
 }
+
+// normalizePanelDefaults 把面板三张表里的 NULL 补成默认值。
+// 逐列判断存在性,新库不会因为列不存在而迁移失败。
+func (m migrator) normalizePanelDefaults(ctx context.Context) error {
+	defaults := []columnDefault{
+		{"ruleset", "display_name", "''"},
+		{"ruleset", "source", "'manual'"},
+		{"ruleset", "refresh_minutes", "0"},
+		{"ruleset", "last_fetch_error", "''"},
+		{"ruleset", "status", "1"},
+		{"ruleset", "content", "''"},
+		{"subscribe_template", "client", "'clash'"},
+		{"subscribe_template", "version", "'v3'"},
+		{"subscribe_template", "is_default", "0"},
+		{"subscribe_template", "visible", "1"},
+		{"subscribe_template", "builtin", "0"},
+		{"subscribe_template", "remark", "''"},
+		{"subscribe_template", "status", "1"},
+		{"subscribe_template", "content", "''"},
+	}
+	for _, item := range defaults {
+		exists, err := m.tableExists(ctx, item.table)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
+		exists, err = m.columnExists(ctx, item.table, item.column)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
+		query := "UPDATE " + m.quote(item.table) + " SET " + m.quote(item.column) + "=" + item.value + " WHERE " + m.quote(item.column) + " IS NULL"
+		if _, err := m.tx.ExecContext(ctx, query); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type columnDefault struct{ table, column, value string }
 
 func commerceTables(dialect Dialect) map[string]string {
 	id := "BIGINT AUTO_INCREMENT"

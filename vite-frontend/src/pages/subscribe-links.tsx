@@ -154,7 +154,7 @@ export default function SubscribeLinksPage() {
       templateId: item.templateId ? String(item.templateId) : "",
       rulesetIds: item.rulesetIds ? item.rulesetIds.split(",").filter(Boolean) : [],
       nodeIds: item.nodeIds ? item.nodeIds.split(",").filter(Boolean) : [],
-      userId: item.userId ? String(item.userId) : "",
+      userId: item.userId ? String(item.userId) : item.shared === 1 ? "all" : "",
     });
     setView("create");
   };
@@ -187,7 +187,8 @@ export default function SubscribeLinksPage() {
     const payload = {
       name: form.name.trim(),
       format: form.format,
-      userId: form.userId ? Number(form.userId) : 0,
+      // "all" = 全体用户:不落 userId,也不带节点 → 后端存成订阅集(全局规则)
+      userId: form.userId && form.userId !== "all" ? Number(form.userId) : 0,
       nodeIds: form.userId ? "" : form.nodeIds.join(","),
       templateId: form.mode === "template" && form.templateId ? form.templateId : 0,
       rulesetIds: form.mode === "custom" ? form.rulesetIds.join(",") : "",
@@ -327,30 +328,40 @@ export default function SubscribeLinksPage() {
         </div>
         <div className="p-4">
           <div className="mb-2 text-xs text-default-400">
-            选账号 = 只给这个账号用;不选账号也不挑节点 = 保存成 <b>订阅集(全局规则)</b>,
-            所有用户的「我的订阅」里那条 Clash 订阅链接都会自动套用这套模板和规则,用户不用做任何选择。
+            「全体用户」= 只存规则,所有用户的「我的订阅」里那条 Clash 链接自动套用,不用挑节点;
+            选具体账号 = 只给这个人用;「不绑定」= 用下面挑的节点做一条公共链接。
           </div>
           <Select
             className="mb-3"
             label="归属账号(可选)"
             selectedKeys={[form.userId || "none"]}
             onSelectionChange={(keys) => {
-              const value = String(Array.from(keys)[0] ?? "none");
+              const value = String(Array.from(keys)[0] ?? "all");
+              const nextUserId = value === "none" ? "" : value;
               setForm((prev) => ({
                 ...prev,
-                userId: value === "none" ? "" : value,
-                nodeIds: value === "none" ? prev.nodeIds : [],
+                userId: nextUserId,
+                // 绑了账号(含全体用户)就不用挑节点
+                nodeIds: nextUserId ? [] : prev.nodeIds,
               }));
             }}
           >
-            {[{ key: "none", label: "不绑定 —— 用下面挑的节点" }, ...users.map((account) => ({
-              key: String(account.id),
-              label: `${account.user}${account.name ? " · " + account.name : ""}`,
-            }))].map((option) => (
+            {[
+              { key: "all", label: "全体用户(全局规则)" },
+              { key: "none", label: "不绑定 —— 用下面挑的节点" },
+              ...users.map((account) => ({
+                key: String(account.id),
+                label: `${account.user}${account.name ? " · " + account.name : ""}`,
+              })),
+            ].map((option) => (
               <SelectItem key={option.key}>{option.label}</SelectItem>
             ))}
           </Select>
-          {form.userId ? (
+          {form.userId === "all" ? (
+            <div className="py-6 text-center text-xs text-default-400">
+              全体用户:所有用户的「我的订阅」里那条 Clash 链接都会套用这套规则,不用挑节点
+            </div>
+          ) : form.userId ? (
             <div className="py-6 text-center text-xs text-default-400">
               已绑定账号:节点按账号自己的线路输出,不用在这里挑
             </div>
@@ -754,7 +765,7 @@ export default function SubscribeLinksPage() {
                         {item.userId
                           ? `归属 ${ownerName(item)}`
                           : item.shared === 1
-                            ? "订阅集(用户可套用)"
+                            ? "全体用户(全局规则)"
                             : `${nodeCount(item)} 个节点`}
                       </span>
                       <span>{templateName(item)}</span>
