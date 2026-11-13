@@ -417,7 +417,12 @@ func validateLinkInput(input *store.LinkInput) string {
 		input.Format = "clash"
 	}
 	input.RulesetIDs = store.NormalizeRulesetIDs(input.RulesetIDs)
-	input.NodeIDs = store.NormalizeNodeIDs(input.NodeIDs)
+	if input.UserID > 0 {
+		// 归属账号模式:节点由账号自己决定,忽略手挑的节点。
+		input.NodeIDs = ""
+	} else {
+		input.NodeIDs = store.NormalizeNodeIDs(input.NodeIDs)
+	}
 	if len(input.NodeIDs) > 3800 {
 		return "选中的节点太多,分几条订阅链接吧"
 	}
@@ -442,6 +447,12 @@ func (a *API) panelLinkCreate(w http.ResponseWriter, r *http.Request) {
 		writePanelError(w, msg)
 		return
 	}
+	if input.UserID > 0 {
+		if _, err := a.store.UserByID(r.Context(), input.UserID); err != nil {
+			writePanelError(w, "归属账号不存在")
+			return
+		}
+	}
 	item, err := a.store.CreateSubscribeLink(r.Context(), input)
 	if err != nil {
 		writePanelError(w, "创建订阅链接失败: "+err.Error())
@@ -461,6 +472,12 @@ func (a *API) panelLinkUpdate(w http.ResponseWriter, r *http.Request) {
 	if msg := validateLinkInput(&req.LinkInput); msg != "" {
 		writePanelError(w, msg)
 		return
+	}
+	if req.LinkInput.UserID > 0 {
+		if _, err := a.store.UserByID(r.Context(), req.LinkInput.UserID); err != nil {
+			writePanelError(w, "归属账号不存在")
+			return
+		}
 	}
 	item, err := a.store.UpdateSubscribeLink(r.Context(), req.value(), req.LinkInput)
 	if err != nil {

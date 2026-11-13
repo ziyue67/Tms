@@ -237,3 +237,21 @@ func TestPanelOutputRejectsUnusableOwner(t *testing.T) {
 		t.Fatal("账号不可用时不该给订阅")
 	}
 }
+
+// 管理员建链接时如果选了归属账号,手挑的节点必须被丢掉 —— 节点由账号决定。
+func TestValidateLinkDropsNodesWhenOwned(t *testing.T) {
+	input := store.LinkInput{Name: "给车友的订阅", Format: "clash", NodeIDs: "1,2", UserID: 42}
+	if msg := validateLinkInput(&input); msg != "" {
+		t.Fatalf("校验失败: %s", msg)
+	}
+	if input.NodeIDs != "" {
+		t.Fatalf("绑定账号后不应保留 nodeIds: %q", input.NodeIDs)
+	}
+	plain := store.LinkInput{Name: "全局订阅", Format: "clash", NodeIDs: "3, 4"}
+	if msg := validateLinkInput(&plain); msg != "" {
+		t.Fatalf("校验失败: %s", msg)
+	}
+	if plain.NodeIDs != "3,4" {
+		t.Fatalf("未绑账号时应归一化 nodeIds: %q", plain.NodeIDs)
+	}
+}
