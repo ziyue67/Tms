@@ -394,7 +394,7 @@ func (a *API) panelTemplateReset(w http.ResponseWriter, r *http.Request) {
 	}
 	builtin, ok := paneldefaults.TemplateByName(item.Name)
 	if !ok {
-		writePanelError(w, "内置模板库里找不到「" + item.Name + "」")
+		writePanelError(w, "内置模板库里找不到「"+item.Name+"」")
 		return
 	}
 	if err := a.store.ResetSubscribeTemplateContent(r.Context(), item.ID, builtin.Content); err != nil {
@@ -1046,19 +1046,11 @@ func anyInt(value any) int {
 	}
 }
 
-
 // panelSeedDefaults 手动把内置模板 / 内置规则分类写进库。
 // 启动时其实已经自动播过一次,这里给「升级前就跑着、库里是空的」的老部署一个补入口,
 // 不用非得重启一次(重启也会跑)。
 func (a *API) panelSeedDefaults(w http.ResponseWriter, r *http.Request) {
-	seeder, ok := a.store.(interface {
-		SubscribeTemplateByName(context.Context, string) (store.SubscribeTemplate, error)
-		CreateBuiltinSubscribeTemplate(context.Context, store.TemplateInput) (store.SubscribeTemplate, error)
-		SetSubscribeTemplateDefault(context.Context, int64) error
-		RulesetByName(context.Context, string) (store.Ruleset, error)
-		CreateRuleset(context.Context, store.RulesetInput) (store.Ruleset, error)
-		MarkRulesetFetched(context.Context, int64, string, string) error
-	})
+	seeder, ok := a.store.(panelbootstrap.Store)
 	if !ok {
 		writePanelError(w, "当前存储实现不支持播种内置内容")
 		return

@@ -15,6 +15,7 @@ type fakeStore struct {
 	rulesets  map[string]store.Ruleset
 	defaultID int64
 	nextID    int64
+	links     []store.SubscribeLink
 }
 
 func newFakeStore() *fakeStore {
@@ -64,7 +65,9 @@ func (f *fakeStore) CreateRuleset(_ context.Context, input store.RulesetInput) (
 	return item, nil
 }
 
-func (f *fakeStore) MarkRulesetFetched(_ context.Context, _ int64, _ string, _ string) error { return nil }
+func (f *fakeStore) MarkRulesetFetched(_ context.Context, _ int64, _ string, _ string) error {
+	return nil
+}
 
 func TestSeedWritesBuiltinTemplatesAndRulesets(t *testing.T) {
 	fake := newFakeStore()
@@ -155,4 +158,42 @@ func TestSeedSkipsDuplicateRuleset(t *testing.T) {
 	if result.TemplatesAdded == 0 {
 		t.Fatal("模板应该照常播种")
 	}
+}
+
+// 空表时会预置一条「全局订阅规则」:默认模板 + 均衡规则,让老订阅链接直接带规则。
+func TestSeedCreatesGlobalSetWhenNoLinks(t *testing.T) {
+	fake := newFakeStore()
+	result, err := Seed(context.Background(), fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.GlobalSetCreated || len(fake.links) != 1 {
+		t.Fatalf("应该预置一条全局订阅规则: %+v links=%d", result, len(fake.links))
+	}
+	set := fake.links[0]
+	if set.Shared != 1 || set.TemplateID == 0 || set.RulesetIDs == "" {
+		t.Fatalf("全局订阅规则内容不对: %+v", set)
+	}
+	// 第二次播种不能再建一条
+	second, err := Seed(context.Background(), fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.GlobalSetCreated || len(fake.links) != 1 {
+		t.Fatal("已有链接时不该再建全局订阅规则")
+	}
+}
+
+func (f *fakeStore) SubscribeLinks(context.Context) ([]store.SubscribeLink, error) {
+	return f.links, nil
+}
+
+func (f *fakeStore) CreateSubscribeLink(_ context.Context, input store.LinkInput) (store.SubscribeLink, error) {
+	item := store.SubscribeLink{
+		ID: f.nextID, Name: input.Name, Format: input.Format, TemplateID: input.TemplateID,
+		RulesetIDs: input.RulesetIDs, Shared: input.Shared, UserID: input.UserID,
+	}
+	f.nextID++
+	f.links = append(f.links, item)
+	return item, nil
 }
