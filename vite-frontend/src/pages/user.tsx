@@ -38,6 +38,8 @@ import {
 } from '@/types';
 import {
   getAllUsers,
+  getPanelLinks,
+  type PanelLink,
   createUser,
   updateUser,
   deleteUser,
@@ -186,6 +188,8 @@ export default function UserPage() {
   const { isOpen: isSubModalOpen, onOpen: onSubModalOpen, onClose: onSubModalClose } = useDisclosure();
   const [subLines, setSubLines] = useState<any[]>([]);
   const [subAllToken, setSubAllToken] = useState<string>('');
+  // 「新建订阅」生成的面板订阅链接(绑了这个账号的那些)
+  const [panelLinks, setPanelLinks] = useState<PanelLink[]>([]);
   const [subUserName, setSubUserName] = useState<string>('');
   const subUrl = (token: string) => getSubscriptionUrl("sub", token);
   // Clash / Mihomo 走独立路径:那边吃 YAML,和上面这条 base64 链接列表不通用,
@@ -194,12 +198,14 @@ export default function UserPage() {
 
   const handleShowSub = async (user: User) => {
     try {
-      const res = await getUserLines(user.id);
+      const [res, panelRes] = await Promise.all([getUserLines(user.id), getPanelLinks().catch(() => null)]);
+      const owned = ((panelRes?.data || []) as PanelLink[]).filter((item) => item.userId === user.id);
+      setPanelLinks(owned);
       // 后端返回结构从数组改成了 {lines, allSubToken},两种都认(版本不同步也不炸)
       const d: any = res.code === 0 ? res.data : null;
       const lines = Array.isArray(d) ? d : (d?.lines || []);
       setSubAllToken(!Array.isArray(d) && d?.allSubToken ? d.allSubToken : '');
-      if (!lines.length) {
+      if (!lines.length && owned.length === 0) {
         toast.error('该车友还没分配任何线路,先去「协议管理」或「中转」分配');
         return;
       }
@@ -1562,7 +1568,10 @@ export default function UserPage() {
       {/* 订阅线路(合体面板:车友的每台机器一条订阅,直连/中转各一条) */}
       <Modal isOpen={isSubModalOpen} onClose={onSubModalClose} size="2xl" backdrop="blur" placement="center">
         <ModalContent>
-          <ModalHeader>🔗 {subUserName} 的订阅线路({subLines.length})</ModalHeader>
+          <ModalHeader>
+            🔗 {subUserName} 的订阅线路({subLines.length})
+            {panelLinks.length > 0 && <span className="text-sm text-default-400">· 面板订阅 {panelLinks.length}</span>}
+          </ModalHeader>
           <ModalBody className="space-y-3">
             <div className="text-small text-default-500">
               每台机器一条订阅(直连 / 中转各一条)。发对应的一条给车友:v2rayN → 订阅 → 添加 → 粘贴 → 更新。
@@ -1707,6 +1716,48 @@ export default function UserPage() {
                 </div>
               );
             })}
+
+            {/* 「订阅链接 → 新建订阅」里绑定到这个账号的链接 */}
+            {panelLinks.length > 0 && (
+              <div className="border border-default-200 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Chip size="sm" variant="flat" color="secondary">📋 面板订阅</Chip>
+                  <span className="text-xs text-default-500">
+                    「订阅链接 → 新建订阅」里归属该账号的 {panelLinks.length} 条,内容就是这个账号自己的节点
+                  </span>
+                </div>
+                {panelLinks.map((link) => {
+                  const url = `${window.location.origin}/api/v1/open_api/panel/${link.token}`;
+                  return (
+                    <div key={link.id} className="space-y-1">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium truncate">{link.name}</span>
+                        <Chip size="sm" variant="flat">{link.format}</Chip>
+                        <span className="text-xs text-default-400">访问 {link.visitCount}</span>
+                      </div>
+                      <Input
+                        readOnly
+                        size="sm"
+                        value={url}
+                        onClick={(e: any) => { if (e.target?.select) e.target.select(); }}
+                      />
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="secondary"
+                        onPress={async () => {
+                          (await copyTextToClipboard(url))
+                            ? toast.success('已复制面板订阅')
+                            : toast.error('复制失败');
+                        }}
+                      >
+                        复制
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={onSubModalClose}>关闭</Button>

@@ -18,12 +18,14 @@ import {
   getPanelLinks,
   getPanelRulesets,
   getPanelTemplates,
+  getAllUsers,
   resetPanelLinkToken,
   updatePanelLink,
   type PanelLink,
   type PanelRuleset,
   type PanelTemplate,
 } from "@/api";
+import type { User } from "@/types";
 
 /**
  * 订阅链接(对齐妙妙屋X):卡片 / 列表 / 聚合订阅 / 新建订阅 四个视图。
@@ -53,6 +55,8 @@ interface FormState {
   templateId: string;
   rulesetIds: string[];
   nodeIds: string[];
+  /** 归属账号:选了就输出该账号自己的节点,并出现在他的「我的订阅链接」 */
+  userId: string;
 }
 
 
@@ -65,6 +69,7 @@ const EMPTY_FORM: FormState = {
   templateId: "",
   rulesetIds: [],
   nodeIds: [],
+  userId: "",
 };
 
 type ViewMode = "cards" | "list" | "aggregate" | "create";
@@ -74,6 +79,7 @@ export default function SubscribeLinksPage() {
   const [templates, setTemplates] = useState<PanelTemplate[]>([]);
   const [rulesets, setRulesets] = useState<PanelRuleset[]>([]);
   const [nodes, setNodes] = useState<PanelNodeItem[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>("cards");
 
@@ -88,16 +94,18 @@ export default function SubscribeLinksPage() {
 
   const load = useCallback(async () => {
     try {
-      const [lr, tr, rr, nr] = await Promise.all([
+      const [lr, tr, rr, nr, ur] = await Promise.all([
         getPanelLinks(),
         getPanelTemplates(),
         getPanelRulesets(),
         getCustomNodes(),
+        getAllUsers(),
       ]);
       if (lr.code === 0) setLinks(lr.data || []);
       if (tr.code === 0) setTemplates(tr.data || []);
       if (rr.code === 0) setRulesets(rr.data || []);
       if (nr.code === 0) setNodes((nr.data || []) as PanelNodeItem[]);
+      if (ur.code === 0) setUsers((ur.data || []) as User[]);
     } catch {
       toast.error("加载失败");
     }
@@ -146,6 +154,7 @@ export default function SubscribeLinksPage() {
       templateId: item.templateId ? String(item.templateId) : "",
       rulesetIds: item.rulesetIds ? item.rulesetIds.split(",").filter(Boolean) : [],
       nodeIds: item.nodeIds ? item.nodeIds.split(",").filter(Boolean) : [],
+      userId: item.userId ? String(item.userId) : "",
     });
     setView("create");
   };
@@ -171,14 +180,15 @@ export default function SubscribeLinksPage() {
       toast.error("给这条订阅起个名字");
       return;
     }
-    if (form.nodeIds.length === 0) {
-      toast.error("至少选一个节点,否则订阅里没有东西");
+    if (!form.userId && form.nodeIds.length === 0) {
+      toast.error("选个归属账号,或者至少挑一个节点");
       return;
     }
     const payload = {
       name: form.name.trim(),
       format: form.format,
-      nodeIds: form.nodeIds.join(","),
+      userId: form.userId ? Number(form.userId) : 0,
+      nodeIds: form.userId ? "" : form.nodeIds.join(","),
       templateId: form.mode === "template" && form.templateId ? form.templateId : 0,
       rulesetIds: form.mode === "custom" ? form.rulesetIds.join(",") : "",
       expireAt: editing?.expireAt || 0,
@@ -283,6 +293,11 @@ export default function SubscribeLinksPage() {
 
   const nodeCount = (item: PanelLink) => (item.nodeIds ? item.nodeIds.split(",").filter(Boolean).length : 0);
   const rulesetCount = (item: PanelLink) => (item.rulesetIds ? item.rulesetIds.split(",").filter(Boolean).length : 0);
+  const ownerName = (item: PanelLink) => {
+    if (!item.userId) return "";
+    const account = users.find((entry) => entry.id === item.userId);
+    return account ? account.user : `#${item.userId}`;
+  };
   const templateName = (item: PanelLink) =>
     item.templateId ? templates.find((tpl) => tpl.id === item.templateId)?.name || `#${item.templateId}` : "默认模板";
 
@@ -300,16 +315,42 @@ export default function SubscribeLinksPage() {
         <div className="text-xs text-default-500">从节点管理中选择节点,快速生成 Clash 订阅配置</div>
       </div>
 
-      {/* 选择节点 */}
+      {/* 归属账号 / 选择节点 */}
       <div className="rounded-large border border-default-200">
         <div className="border-b border-default-200 px-4 py-3">
-          <div className="text-sm font-medium">选择节点</div>
+          <div className="text-sm font-medium">{form.userId ? "归属账号" : "选择节点"}</div>
           <div className="text-xs text-default-400">
-            从已保存的节点中选择需要添加到订阅的节点(已选择 {form.nodeIds.length} 个)
+            {form.userId
+              ? "这条订阅会输出该账号自己的线路,并出现在他的「我的订阅链接」里"
+              : `从已保存的节点中选择需要添加到订阅的节点(已选择 ${form.nodeIds.length} 个)`}
           </div>
         </div>
         <div className="p-4">
-          {enabledNodes.length === 0 ? (
+          <Select
+            className="mb-3"
+            label="归属账号(可选)"
+            selectedKeys={[form.userId || "none"]}
+            onSelectionChange={(keys) => {
+              const value = String(Array.from(keys)[0] ?? "none");
+              setForm((prev) => ({
+                ...prev,
+                userId: value === "none" ? "" : value,
+                nodeIds: value === "none" ? prev.nodeIds : [],
+              }));
+            }}
+          >
+            {[{ key: "none", label: "不绑定 —— 用下面挑的节点" }, ...users.map((account) => ({
+              key: String(account.id),
+              label: `${account.user}${account.name ? " · " + account.name : ""}`,
+            }))].map((option) => (
+              <SelectItem key={option.key}>{option.label}</SelectItem>
+            ))}
+          </Select>
+          {form.userId ? (
+            <div className="py-6 text-center text-xs text-default-400">
+              已绑定账号:节点按账号自己的线路输出,不用在这里挑
+            </div>
+          ) : enabledNodes.length === 0 ? (
             <div className="py-8 text-center text-xs text-default-400">暂无可用节点,请先在节点管理中添加节点</div>
           ) : (
             <>
@@ -700,7 +741,7 @@ export default function SubscribeLinksPage() {
                       </Chip>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-default-400">
-                      <span>{nodeCount(item)} 个节点</span>
+                      <span>{item.userId ? `归属 ${ownerName(item)}` : `${nodeCount(item)} 个节点`}</span>
                       <span>{templateName(item)}</span>
                       <span>{rulesetCount(item)} 条规则集</span>
                       <span>访问 {item.visitCount}</span>
