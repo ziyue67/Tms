@@ -42,6 +42,7 @@ import {
   deletePanelTemplate,
   setPanelTemplateDefault,
   resetPanelTemplate,
+  seedPanelDefaults,
   type PanelTemplate,
   type PanelTemplateClient,
 } from "@/api";
@@ -442,6 +443,22 @@ export default function TemplatesPage() {
     }
   };
 
+  const handleSeed = async () => {
+    if (!window.confirm("导入内置模板(6 个)?同名的会跳过,不会覆盖你改过的内容。")) return;
+    toast.loading("导入中…", { id: "seed" });
+    try {
+      const res = await seedPanelDefaults();
+      if (res.code === 0) {
+        toast.success(`已导入 ${res.data?.templatesAdded ?? 0} 个模板`, { id: "seed" });
+        await load();
+      } else {
+        toast.error(res.msg || "导入失败", { id: "seed" });
+      }
+    } catch {
+      toast.error("导入失败", { id: "seed" });
+    }
+  };
+
   const hiddenCount = items.filter((item) => item.visible === 0).length;
 
   return (
@@ -492,6 +509,9 @@ export default function TemplatesPage() {
               >
                 用户可见性
               </Button>
+              <Button size="sm" variant="bordered" onPress={handleSeed}>
+                导入内置模板
+              </Button>
               <Button
                 color="primary"
                 size="sm"
@@ -514,7 +534,7 @@ export default function TemplatesPage() {
           ) : visible.length === 0 ? (
             <div className="px-6 py-16 text-center text-default-500">
               {items.length === 0
-                ? "还没有模板。点「新建模板」,或重启一次服务让内置模板写入。"
+                ? "还没有模板。点右上角「导入内置模板」一键写入 6 个内置模板。"
                 : "这个筛选下没有模板。"}
             </div>
           ) : (

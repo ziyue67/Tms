@@ -31,6 +31,7 @@ import {
   updatePanelRuleset,
   deletePanelRuleset,
   refreshPanelRuleset,
+  seedPanelDefaults,
   type PanelRuleset,
 } from "@/api";
 
@@ -178,6 +179,22 @@ export default function RulesetsPage() {
     }
   };
 
+  const handleSeed = async () => {
+    if (!window.confirm("导入内置规则分类(27 个)?同名的会跳过,不会覆盖你改过的内容。")) return;
+    toast.loading("导入中…", { id: "seed" });
+    try {
+      const res = await seedPanelDefaults();
+      if (res.code === 0) {
+        toast.success(`已导入 ${res.data?.rulesetsAdded ?? 0} 个规则集`, { id: "seed" });
+        await load();
+      } else {
+        toast.error(res.msg || "导入失败", { id: "seed" });
+      }
+    } catch {
+      toast.error("导入失败", { id: "seed" });
+    }
+  };
+
   const publicUrl = (name: string) =>
     `${window.location.origin}/api/v1/open_api/panel-ruleset/${name}`;
 
@@ -201,6 +218,9 @@ export default function RulesetsPage() {
             <div className="mr-auto whitespace-nowrap text-sm text-default-500">
               共 {items.length} 个规则集
             </div>
+            <Button size="sm" variant="bordered" onPress={handleSeed}>
+              导入内置分类
+            </Button>
             <Button
               color="primary"
               size="sm"

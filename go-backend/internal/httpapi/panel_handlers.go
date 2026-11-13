@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ziyue67/tms/go-backend/internal/panelbootstrap"
 	"github.com/ziyue67/tms/go-backend/internal/paneldefaults"
 	"github.com/ziyue67/tms/go-backend/internal/store"
 )
@@ -1045,6 +1046,34 @@ func anyInt(value any) int {
 	}
 }
 
+
+// panelSeedDefaults 手动把内置模板 / 内置规则分类写进库。
+// 启动时其实已经自动播过一次,这里给「升级前就跑着、库里是空的」的老部署一个补入口,
+// 不用非得重启一次(重启也会跑)。
+func (a *API) panelSeedDefaults(w http.ResponseWriter, r *http.Request) {
+	seeder, ok := a.store.(interface {
+		SubscribeTemplateByName(context.Context, string) (store.SubscribeTemplate, error)
+		CreateBuiltinSubscribeTemplate(context.Context, store.TemplateInput) (store.SubscribeTemplate, error)
+		SetSubscribeTemplateDefault(context.Context, int64) error
+		RulesetByName(context.Context, string) (store.Ruleset, error)
+		CreateRuleset(context.Context, store.RulesetInput) (store.Ruleset, error)
+		MarkRulesetFetched(context.Context, int64, string, string) error
+	})
+	if !ok {
+		writePanelError(w, "当前存储实现不支持播种内置内容")
+		return
+	}
+	result, err := panelbootstrap.Seed(r.Context(), seeder)
+	if err != nil {
+		writePanelError(w, "导入内置内容失败: "+err.Error())
+		return
+	}
+	writeResponse(w, OK(map[string]any{
+		"templatesAdded": result.TemplatesAdded,
+		"rulesetsAdded":  result.RulesetsAdded,
+		"defaultFixed":   result.DefaultFixed,
+	}))
+}
 
 // ---------- 用户自己的订阅链接 ----------
 
