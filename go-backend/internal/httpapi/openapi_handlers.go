@@ -43,6 +43,14 @@ func (a *API) openClashSubscription(w http.ResponseWriter, r *http.Request) {
 	// 管理员在「订阅链接」里配了订阅集(模板 + 规则集)时,用户自己那条老订阅链接
 	// 直接按这套规则输出 —— 用户不用再去建一条,也不用做任何选择。
 	if set, ok := a.firstSharedSet(r.Context()); ok {
+		// 全局订阅集带分组时:节点用订阅集自己配的那些,规则按分组改写。
+		if groups, err := store.ParseGroups(set.GroupsJSON); err == nil && len(groups) > 0 {
+			if output, ok := a.nodesOutput(r.Context(), store.GroupNodeIDs(groups)); ok {
+				w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+				_, _ = w.Write([]byte(renderGroupClashYAML(groups, buildClashProxies(output), output.GroupNodes)))
+				return
+			}
+		}
 		link := store.SubscribeLink{TemplateID: set.TemplateID, RulesetIDs: set.RulesetIDs}
 		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 		_, _ = w.Write([]byte(renderPanelClashYAML(r.Context(), a.store, link, proxies, nil)))

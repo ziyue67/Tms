@@ -274,6 +274,8 @@ export interface PanelLinkPayload {
   nodeIds?: string;
   /** 分组订阅:JSON 字符串,有它就不用 nodeIds/rulesetIds */
   groupsJson?: string;
+  /** 1 = 全局订阅集(应用到所有用户的「我的订阅」) */
+  shared?: number;
   userId?: number;
   expireAt?: number;
 }
