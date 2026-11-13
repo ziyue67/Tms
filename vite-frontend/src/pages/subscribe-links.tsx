@@ -9,6 +9,7 @@ import { Spinner } from "@heroui/spinner";
 import { Snippet } from "@heroui/snippet";
 import toast from "react-hot-toast";
 import PageWrapper from "@/components/page-wrapper";
+import { RULE_PRESETS, categoryEmoji, presetRulesetIDs, type RulePreset } from "@/utils/panel-category";
 import { CopyIcon, PlusIcon } from "@/components/icons";
 import {
   createPanelLink,
@@ -47,18 +48,13 @@ interface FormState {
   name: string;
   format: "clash" | "v2ray" | "singbox";
   mode: "template" | "custom";
-  /** 自定义规则时套用的方案:均衡(全选)/只拦广告/手动 */
-  preset: "balanced" | "ads" | "manual";
+  /** 自定义规则时套用的方案 */
+  preset: RulePreset;
   templateId: string;
   rulesetIds: string[];
   nodeIds: string[];
 }
 
-const PRESETS: { key: FormState["preset"]; label: string; hint: string }[] = [
-  { key: "balanced", label: "均衡规则(推荐)", hint: "自动勾上全部规则集,可以再手动增减" },
-  { key: "ads", label: "只拦广告", hint: "只勾广告拦截类规则集" },
-  { key: "manual", label: "手动选择", hint: "自己决定勾哪些" },
-];
 
 const EMPTY_FORM: FormState = {
   name: "",
@@ -88,6 +84,7 @@ export default function SubscribeLinksPage() {
   // 聚合订阅表单
   const [aggregate, setAggregate] = useState({ name: "", remark: "", templateId: "", sources: [] as string[] });
   const [aggregating, setAggregating] = useState(false);
+  const [presetCollapsed, setPresetCollapsed] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -113,19 +110,8 @@ export default function SubscribeLinksPage() {
 
   const enabledNodes = useMemo(() => nodes.filter((node) => node.status === 1), [nodes]);
 
-  // 方案 -> 规则集 id 列表
-  const presetIDs = useCallback(
-    (preset: FormState["preset"]) => {
-      if (preset === "balanced") return rulesets.map((item) => String(item.id));
-      if (preset === "ads") {
-        return rulesets
-          .filter((item) => /广告|拦截|ad/i.test(`${item.displayName || ""}${item.name}`))
-          .map((item) => String(item.id));
-      }
-      return [];
-    },
-    [rulesets]
-  );
+  // 方案 -> 规则集 id 列表(公共实现,用户端同款)
+  const presetIDs = useCallback((preset: RulePreset) => presetRulesetIDs(rulesets, preset), [rulesets]);
 
   // 规则集加载完(或切到自定义规则)时,把「均衡规则」的方案真正勾上
   useEffect(() => {
@@ -309,45 +295,25 @@ export default function SubscribeLinksPage() {
 
   const createPanel = (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <Button size="sm" variant="light" onPress={() => setView("cards")}>
-          ← 返回订阅链接
-        </Button>
-        <div>
-          <div className="text-lg font-semibold">{editing ? `编辑订阅 · ${editing.name}` : "新建订阅"}</div>
-          <div className="text-xs text-default-500">从节点管理中选择节点,快速生成订阅配置</div>
-        </div>
+      <div>
+        <div className="text-lg font-semibold">{editing ? `编辑订阅 · ${editing.name}` : "新建订阅"}</div>
+        <div className="text-xs text-default-500">从节点管理中选择节点,快速生成 Clash 订阅配置</div>
       </div>
 
-      <Card>
-        <CardBody className="gap-4">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <Input
-              isRequired
-              label="订阅名称"
-              placeholder="例如 我的 Clash"
-              value={form.name}
-              onValueChange={(value) => setForm({ ...form, name: value })}
-            />
-            <Select
-              label="输出格式"
-              selectedKeys={[form.format]}
-              onSelectionChange={(keys) => setForm({ ...form, format: Array.from(keys)[0] as FormState["format"] })}
-            >
-              {Object.entries(FORMAT_LABEL).map(([key, label]) => (
-                <SelectItem key={key}>{label}</SelectItem>
-              ))}
-            </Select>
-            <div className="flex items-end pb-3 text-xs text-default-400">已选择 {form.nodeIds.length} 个节点</div>
+      {/* 选择节点 */}
+      <div className="rounded-large border border-default-200">
+        <div className="border-b border-default-200 px-4 py-3">
+          <div className="text-sm font-medium">选择节点</div>
+          <div className="text-xs text-default-400">
+            从已保存的节点中选择需要添加到订阅的节点(已选择 {form.nodeIds.length} 个)
           </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium">选择节点</div>
-                <div className="text-xs text-default-400">从已保存的节点中选择需要添加到订阅的节点</div>
-              </div>
-              <div className="flex gap-2">
+        </div>
+        <div className="p-4">
+          {enabledNodes.length === 0 ? (
+            <div className="py-8 text-center text-xs text-default-400">暂无可用节点,请先在节点管理中添加节点</div>
+          ) : (
+            <>
+              <div className="mb-2 flex justify-end gap-2">
                 <Button
                   size="sm"
                   variant="light"
@@ -359,13 +325,7 @@ export default function SubscribeLinksPage() {
                   清空
                 </Button>
               </div>
-            </div>
-            {enabledNodes.length === 0 ? (
-              <div className="rounded-medium border border-dashed border-default-200 px-3 py-8 text-center text-xs text-default-400">
-                暂无可用节点,请先在「节点管理」中添加节点。
-              </div>
-            ) : (
-              <div className="grid max-h-56 grid-cols-1 gap-1 overflow-auto rounded-medium border border-default-200 p-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid max-h-56 grid-cols-1 gap-1 overflow-auto sm:grid-cols-2 lg:grid-cols-3">
                 {enabledNodes.map((node) => (
                   <label
                     key={node.id}
@@ -382,91 +342,108 @@ export default function SubscribeLinksPage() {
                   </label>
                 ))}
               </div>
-            )}
-          </div>
+            </>
+          )}
+        </div>
+      </div>
 
-          <div>
-            <div className="mb-2 text-sm font-medium">规则模式</div>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { key: "custom", label: "自定义规则", hint: "勾选规则集,插到 MATCH 之前" },
-                { key: "template", label: "使用模板", hint: "套用模板里的策略组与规则" },
-              ].map((entry) => {
-                const active = form.mode === entry.key;
-                return (
-                  <button
-                    key={entry.key}
-                    className={
-                      "rounded-medium border px-3 py-2 text-left transition-colors " +
-                      (active
-                        ? "border-primary bg-primary/10"
-                        : "border-default-200 hover:bg-default-50 dark:hover:bg-default-100/10")
-                    }
-                    type="button"
-                    onClick={() => {
-                      const mode = entry.key as FormState["mode"];
-                      setForm((prev) =>
-                        mode === "custom"
-                          ? { ...prev, mode, preset: "balanced", rulesetIds: presetIDs("balanced") }
-                          : { ...prev, mode }
-                      );
-                    }}
-                  >
-                    <div className={"text-sm " + (active ? "font-medium text-primary" : "")}>{entry.label}</div>
-                    <div className="text-[11px] text-default-400">{entry.hint}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium">规则选择</span>
-              {form.mode === "custom" && (
-                <span className="text-xs text-default-400">已选择 {form.rulesetIds.length} 个规则集</span>
-              )}
-            </div>
-            {form.mode === "template" ? (
-              <Select
-                label="订阅模板"
-                selectedKeys={form.templateId ? [form.templateId] : []}
-                onSelectionChange={(keys) => setForm({ ...form, templateId: String(Array.from(keys)[0] ?? "") })}
+      {/* 规则模式 */}
+      <div>
+        <div className="mb-2 text-sm font-medium">规则模式</div>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { key: "custom", label: "自定义规则" },
+            { key: "template", label: "使用模板" },
+          ].map((entry) => {
+            const active = form.mode === entry.key;
+            return (
+              <button
+                key={entry.key}
+                className={
+                  "rounded-medium border px-4 py-2.5 text-sm transition-colors " +
+                  (active
+                    ? "border-primary bg-primary font-medium text-white"
+                    : "border-default-200 text-default-600 hover:bg-default-50 dark:hover:bg-default-100/10")
+                }
+                type="button"
+                onClick={() => {
+                  const mode = entry.key as FormState["mode"];
+                  setForm((prev) =>
+                    mode === "custom"
+                      ? { ...prev, mode, preset: "balanced", rulesetIds: presetIDs("balanced") }
+                      : { ...prev, mode }
+                  );
+                }}
               >
-                {templates
-                  .filter((tpl) => (FORMAT_CLIENTS[form.format] || []).includes(tpl.client))
-                  .map((tpl) => (
-                    <SelectItem key={String(tpl.id)}>
-                      {`${tpl.name}${tpl.isDefault === 1 ? "(默认)" : ""}`}
-                    </SelectItem>
-                  ))}
-              </Select>
-            ) : rulesets.length === 0 ? (
-              <div className="rounded-medium border border-dashed border-default-200 px-3 py-6 text-center text-xs text-default-400">
-                还没有规则集,先去「规则集」新建。
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <Select
-                  label="规则方案"
-                  selectedKeys={[form.preset]}
-                  onSelectionChange={(keys) => {
-                    const preset = Array.from(keys)[0] as FormState["preset"];
-                    setForm((prev) => ({ ...prev, preset, rulesetIds: presetIDs(preset) }));
-                  }}
-                >
-                  {PRESETS.map((entry) => (
-                    <SelectItem key={entry.key}>{entry.label}</SelectItem>
-                  ))}
-                </Select>
-                <div className="text-[11px] text-default-400">
-                  {PRESETS.find((entry) => entry.key === form.preset)?.hint}
-                </div>
-                <div className="grid max-h-52 grid-cols-1 gap-1 overflow-auto rounded-medium border border-default-200 p-2 sm:grid-cols-2 lg:grid-cols-3">
+                {entry.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 规则选择 */}
+      <div>
+        <div className="mb-2 flex items-center gap-1">
+          <span className="text-sm font-medium">规则选择</span>
+          <span className="text-default-400" title="规则集会在渲染时插入模板 rules 的 MATCH 之前">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 17h.01M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2-2.5 3.5" strokeLinecap="round" />
+            </svg>
+          </span>
+        </div>
+
+        {form.mode === "template" ? (
+          <Select
+            label="订阅模板"
+            selectedKeys={form.templateId ? [form.templateId] : []}
+            onSelectionChange={(keys) => setForm({ ...form, templateId: String(Array.from(keys)[0] ?? "") })}
+          >
+            {templates
+              .filter((tpl) => (FORMAT_CLIENTS[form.format] || []).includes(tpl.client))
+              .map((tpl) => (
+                <SelectItem key={String(tpl.id)}>
+                  {`${tpl.name}${tpl.isDefault === 1 ? "(默认)" : ""}`}
+                </SelectItem>
+              ))}
+          </Select>
+        ) : rulesets.length === 0 ? (
+          <div className="rounded-medium border border-dashed border-default-200 px-3 py-6 text-center text-xs text-default-400">
+            还没有规则集,先去「规则集」新建。
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <Select
+              selectedKeys={[form.preset]}
+              onSelectionChange={(keys) => {
+                const preset = Array.from(keys)[0] as FormState["preset"];
+                setForm((prev) => ({ ...prev, preset, rulesetIds: presetIDs(preset) }));
+              }}
+            >
+              {RULE_PRESETS.map((entry) => (
+                <SelectItem key={entry.key}>{entry.label}</SelectItem>
+              ))}
+            </Select>
+            <div className="text-xs text-default-400">
+              {RULE_PRESETS.find((entry) => entry.key === form.preset)?.hint}
+            </div>
+
+            <div className="rounded-medium border border-default-200">
+              <button
+                className="flex w-full items-center justify-between px-3 py-2 text-sm"
+                type="button"
+                onClick={() => setPresetCollapsed((value) => !value)}
+              >
+                <span className="text-default-600">已选择 {form.rulesetIds.length} 个类别</span>
+                <span className="text-default-400">{presetCollapsed ? "▾" : "▴"}</span>
+              </button>
+              {!presetCollapsed && (
+                <div className="grid max-h-72 grid-cols-1 gap-x-6 gap-y-1 overflow-auto border-t border-default-200 px-3 py-3 sm:grid-cols-2 lg:grid-cols-3">
                   {rulesets.map((ruleset) => (
                     <label
                       key={ruleset.id}
-                      className="flex cursor-pointer items-center gap-2 rounded-small px-2 py-1.5 text-sm hover:bg-default-50 dark:hover:bg-default-100/10"
+                      className="flex cursor-pointer items-center gap-2 rounded-small px-1 py-1 text-sm hover:bg-default-50 dark:hover:bg-default-100/10"
                     >
                       <input
                         checked={form.rulesetIds.includes(String(ruleset.id))}
@@ -477,34 +454,43 @@ export default function SubscribeLinksPage() {
                           setForm((prev) => ({ ...prev, preset: "manual" }));
                         }}
                       />
+                      <span>{categoryEmoji(ruleset)}</span>
                       <span className="flex-1 truncate">{ruleset.displayName || ruleset.name}</span>
                     </label>
                   ))}
                 </div>
-              </div>
-            )}
-          </div>
-
-          {editing && (
-            <div className="text-xs text-default-400">
-              当前地址:{subUrl(editing.token)}(编辑不改地址;要换地址用「重置 token」)
+              )}
             </div>
-          )}
-        </CardBody>
-      </Card>
+          </div>
+        )}
+      </div>
 
-      <div className="flex items-center justify-end gap-2">
+      {/* 底部操作 */}
+      <div className="flex items-stretch gap-2">
         <Button
-          variant="light"
+          className="flex-1"
+          color="primary"
+          isDisabled={form.nodeIds.length === 0}
+          isLoading={saving}
+          onPress={submit}
+        >
+          {editing ? "保存订阅" : "生成订阅文件"}
+        </Button>
+        <Button
+          variant="bordered"
           onPress={() =>
             setForm({ ...EMPTY_FORM, templateId: defaultTemplateId, name: form.name, rulesetIds: presetIDs("balanced") })
           }
         >
           清空
         </Button>
-        <Button color="primary" isLoading={saving} onPress={submit}>
-          {editing ? "保存" : "生成订阅文件"}
-        </Button>
+      </div>
+
+      <div className="text-xs text-default-400">
+        <button className="underline" type="button" onClick={() => setView("cards")}>
+          ← 返回订阅链接
+        </button>
+        {editing && ` · 当前地址:${subUrl(editing.token)}(编辑不改地址,要换地址用「重置 token」)`}
       </div>
     </div>
   );

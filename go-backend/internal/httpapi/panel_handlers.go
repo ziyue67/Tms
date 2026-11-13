@@ -525,6 +525,17 @@ func (a *API) loadPanelSubscription(w http.ResponseWriter, r *http.Request) (sto
 //     查不到就 403,链接等于建了不能用;
 //   - 老链接(没有 node_ids):沿用「借用车友 all_sub_token / 线路 sub_token」的老路径。
 func (a *API) panelOutputFor(ctx context.Context, link store.SubscribeLink) (store.SubscriptionOutput, bool) {
+	// 绑了账号的链接(用户自建订阅):输出这个账号自己的节点。
+	if link.UserID > 0 {
+		output, err := a.store.SubscriptionByUserID(ctx, link.UserID)
+		if err != nil || !output.Usable {
+			return output, false
+		}
+		if len(output.Entries) == 0 && len(output.CustomParsed) == 0 {
+			return output, false
+		}
+		return output, true
+	}
 	if ids := parsePanelNodeIDs(link.NodeIDs); len(ids) > 0 {
 		nodes, err := a.store.PanelNodesByIDs(ctx, ids)
 		if err != nil || len(nodes) == 0 {
@@ -1003,6 +1014,170 @@ func anyInt(value any) int {
 	default:
 		return 0
 	}
+}
+
+
+// ---------- 用户自己的订阅链接 ----------
+
+// myUserID 取当前登录账号 id;取不到直接 401。
+func (a *API) myUserID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	claims, ok := claimsFrom(r)
+	if !ok {
+		writeResponse(w, Error(401, "请先登录"))
+		return 0, false
+	}
+	id, err := claims.UserID()
+	if err != nil {
+		writeResponse(w, Error(401, "登录状态异常"))
+		return 0, false
+	}
+	return id, true
+}
+
+// myPanelLinkList 只返回自己的订阅链接。
+func (a *API) myPanelLinkList(w http.ResponseWriter, r *http.Request) {
+	userID, ok := a.myUserID(w, r)
+	if !ok {
+		return
+	}
+	list, err := a.store.SubscribeLinks(r.Context())
+	if err != nil {
+		writePanelError(w, "加载订阅失败: "+err.Error())
+		return
+	}
+	owned := make([]store.SubscribeLink, 0, len(list))
+	for _, item := range list {
+		if item.UserID == userID {
+			owned = append(owned, item)
+		}
+	}
+	writeResponse(w, OK(owned))
+}
+
+// myPanelLinkCreate 用户新建订阅:节点固定取自己的,不接受前端传 nodeIds。
+func (a *API) myPanelLinkCreate(w http.ResponseWriter, r *http.Request) {
+	userID, ok := a.myUserID(w, r)
+	if !ok {
+		return
+	}
+	var input store.LinkInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.UserID = userID
+	input.NodeIDs = ""
+	if msg := validateLinkInput(&input); msg != "" {
+		writePanelError(w, msg)
+		return
+	}
+	item, err := a.store.CreateSubscribeLink(r.Context(), input)
+	if err != nil {
+		writePanelError(w, "创建订阅失败: "+err.Error())
+		return
+	}
+	writeResponse(w, OK(item))
+}
+
+// myPanelLinkOwned 取自己的链接,不是自己的当不存在。
+func (a *API) myPanelLinkOwned(w http.ResponseWriter, r *http.Request, id int64, userID int64) (store.SubscribeLink, bool) {
+	item, err := a.store.SubscribeLinkByID(r.Context(), id)
+	if err != nil || item.UserID != userID {
+		writePanelError(w, "订阅不存在")
+		return item, false
+	}
+	return item, true
+}
+
+func (a *API) myPanelLinkUpdate(w http.ResponseWriter, r *http.Request) {
+	userID, ok := a.myUserID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		panelIDRequest
+		store.LinkInput
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if _, ok := a.myPanelLinkOwned(w, r, req.value(), userID); !ok {
+		return
+	}
+	req.LinkInput.UserID = userID
+	req.LinkInput.NodeIDs = ""
+	if msg := validateLinkInput(&req.LinkInput); msg != "" {
+		writePanelError(w, msg)
+		return
+	}
+	item, err := a.store.UpdateSubscribeLink(r.Context(), req.value(), req.LinkInput)
+	if err != nil {
+		writePanelError(w, "更新订阅失败: "+err.Error())
+		return
+	}
+	writeResponse(w, OK(item))
+}
+
+func (a *API) myPanelLinkDelete(w http.ResponseWriter, r *http.Request) {
+	userID, ok := a.myUserID(w, r)
+	if !ok {
+		return
+	}
+	var req panelIDRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if _, owned := a.myPanelLinkOwned(w, r, req.value(), userID); !owned {
+		return
+	}
+	if err := a.store.DeleteSubscribeLink(r.Context(), req.value()); err != nil {
+		writePanelError(w, "删除失败: "+err.Error())
+		return
+	}
+	writeResponse(w, OK(true))
+}
+
+func (a *API) myPanelLinkResetToken(w http.ResponseWriter, r *http.Request) {
+	userID, ok := a.myUserID(w, r)
+	if !ok {
+		return
+	}
+	var req panelIDRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if _, owned := a.myPanelLinkOwned(w, r, req.value(), userID); !owned {
+		return
+	}
+	token, err := a.store.ResetSubscribeLinkToken(r.Context(), req.value())
+	if err != nil {
+		writePanelError(w, "重置失败: "+err.Error())
+		return
+	}
+	writeResponse(w, OK(map[string]any{"token": token}))
+}
+
+// myPanelOptions 用户能选的模板(只给 visible=1 的)和规则集。
+func (a *API) myPanelOptions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.myUserID(w, r); !ok {
+		return
+	}
+	templates, err := a.store.SubscribeTemplates(r.Context())
+	if err != nil {
+		writePanelError(w, "加载模板失败: "+err.Error())
+		return
+	}
+	visible := make([]store.SubscribeTemplate, 0, len(templates))
+	for _, item := range templates {
+		if item.Visible == 1 {
+			visible = append(visible, item)
+		}
+	}
+	rulesets, err := a.store.Rulesets(r.Context())
+	if err != nil {
+		writePanelError(w, "加载规则集失败: "+err.Error())
+		return
+	}
+	writeResponse(w, OK(map[string]any{"templates": visible, "rulesets": rulesets}))
 }
 
 // panelRulesetFile 规则集公开下载:/open_api/panel-ruleset/{name}。

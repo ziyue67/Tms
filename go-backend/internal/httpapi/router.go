@@ -60,6 +60,7 @@ type DataStore interface {
 	RetryPaymentOrder(context.Context, string) (*store.PaymentOrder, error)
 	CompletePaymentOrder(context.Context, string, string, string) (*store.PaymentOrder, error)
 	SubscriptionByToken(context.Context, string) (store.SubscriptionOutput, error)
+	SubscriptionByUserID(context.Context, int64) (store.SubscriptionOutput, error)
 	SubscriptionStoreHeader(context.Context, string, *int64) (store.User, *store.TunnelPermission, error)
 	SubscriptionPlans(context.Context, bool) ([]store.SubscriptionPlan, error)
 	SubscriptionPlanByID(context.Context, int64) (store.SubscriptionPlan, error)
@@ -218,6 +219,13 @@ func New(dependencies Dependencies) http.Handler {
 			authenticated.Get("/payment/orders", api.myPaymentOrders)
 			authenticated.Get("/payment/orders/{orderNo}", api.paymentOrder)
 			authenticated.Post("/inbound/my-lines", api.myInboundLines)
+			// 用户自己的订阅链接:只能看/改自己的,节点固定取自己账号的
+			authenticated.Post("/my/panel-link/list", api.myPanelLinkList)
+			authenticated.Post("/my/panel-link/create", api.myPanelLinkCreate)
+			authenticated.Post("/my/panel-link/update", api.myPanelLinkUpdate)
+			authenticated.Post("/my/panel-link/delete", api.myPanelLinkDelete)
+			authenticated.Post("/my/panel-link/reset-token", api.myPanelLinkResetToken)
+			authenticated.Post("/my/panel-options", api.myPanelOptions)
 			authenticated.Post("/inbound/reset-sub-token", api.resetMySubToken)
 
 			authenticated.Group(func(admin chi.Router) {

@@ -15,6 +15,7 @@ import RelayPage from "@/pages/relay";
 import RulesetsPage from "@/pages/rulesets";
 import TemplatesPage from "@/pages/templates";
 import NodesPage from "@/pages/nodes";
+import MyLinksPage from "@/pages/my-links";
 import SubscribeLinksPage from "@/pages/subscribe-links";
 import GuidePage from "@/pages/guide";
 import MySubPage from "@/pages/my-sub";
@@ -165,6 +166,14 @@ function App() {
         element={
           <ProtectedRoute>
             <RelayPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/my-links"
+        element={
+          <ProtectedRoute>
+            <MyLinksPage />
           </ProtectedRoute>
         }
       />

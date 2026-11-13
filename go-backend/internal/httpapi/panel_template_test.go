@@ -205,3 +205,35 @@ func TestPanelIDAcceptsStringAndNumber(t *testing.T) {
 		t.Fatal("缺 id 应按 0 处理")
 	}
 }
+
+// 绑了 user_id 的链接:输出该账号自己的节点,和 custom_node 无关。
+func TestPanelOutputUsesOwnerNodes(t *testing.T) {
+	fake := &fakeStore{
+		panelNodes: []store.PanelNode{{ID: 1, Name: "不该出现", Protocol: "trojan"}},
+		userOutput: store.SubscriptionOutput{
+			UserID: 42, Usable: true,
+			Entries: []store.SubscriptionEntry{{Protocol: "vless", Server: "user.example.com", Port: 443, UUID: "u-1", Remark: "家宽"}},
+		},
+	}
+	api := &API{store: fake}
+	output, ok := api.panelOutputFor(context.Background(), store.SubscribeLink{ID: 7, Token: "t", UserID: 42})
+	if !ok {
+		t.Fatal("绑定账号的链接应该能出输出")
+	}
+	if output.UserID != 42 || len(output.Entries) != 1 {
+		t.Fatalf("输出不是账号自己的节点: %+v", output)
+	}
+	proxies := buildClashProxies(output)
+	if len(proxies) != 1 || proxies[0]["name"] != "家宽" {
+		t.Fatalf("节点没转成 clash 代理: %v", proxies)
+	}
+}
+
+// 账号过期/停用时,绑定账号的链接不给输出。
+func TestPanelOutputRejectsUnusableOwner(t *testing.T) {
+	fake := &fakeStore{userOutput: store.SubscriptionOutput{UserID: 42, Usable: false}}
+	api := &API{store: fake}
+	if _, ok := api.panelOutputFor(context.Background(), store.SubscribeLink{ID: 7, UserID: 42}); ok {
+		t.Fatal("账号不可用时不该给订阅")
+	}
+}

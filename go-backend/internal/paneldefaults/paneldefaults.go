@@ -75,19 +75,6 @@ func Templates() []Template {
 	}
 }
 
-// Rulesets 返回内置规则集。
-//
-// 都是「手动」来源的完整规则行(带策略),渲染时直接插入模板 rules 的 MATCH 之前 ——
-// 上游那种只有 `DOMAIN-SUFFIX,xxx`、没有策略的 rule-provider 清单不能直接内联,
-// 想用的话请自己在面板里建远程规则集并确认格式。
-func Rulesets() []Ruleset {
-	return []Ruleset{
-		{Name: "advertising.lst", DisplayName: "广告拦截", Source: "manual", Content: mustRead("assets/advertising.lst")},
-		{Name: "cn-direct.lst", DisplayName: "国内直连", Source: "manual", Content: mustRead("assets/cn-direct.lst")},
-		{Name: "proxy-common.lst", DisplayName: "常用代理域名", Source: "manual", Content: mustRead("assets/proxy-common.lst")},
-	}
-}
-
 // TemplateByName 按名字取内置模板,「恢复内置」用。
 func TemplateByName(name string) (Template, bool) {
 	for _, t := range Templates() {
