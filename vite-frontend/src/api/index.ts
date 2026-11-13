@@ -199,6 +199,8 @@ export interface PanelRuleset {
   updatedTime: number;
 }
 export const getPanelRulesets = () => Network.post("/panel/ruleset/list");
+/** 把内置模板 / 27 个内置规则分类写进库(同名跳过,不覆盖改过的) */
+export const seedPanelDefaults = () => Network.post("/panel/seed-defaults");
 export const getPanelRuleset = (id: number | string) => Network.post("/panel/ruleset/get", { id: String(id) });
 export const createPanelRuleset = (data: { name: string; displayName?: string; source: "manual" | "remote"; remoteUrl?: string; refreshMinutes?: number; content?: string }) => Network.post("/panel/ruleset/create", data);
 export const updatePanelRuleset = (id: number | string, data: { name: string; displayName?: string; source: "manual" | "remote"; remoteUrl?: string; refreshMinutes?: number; content?: string }) => Network.post("/panel/ruleset/update", { id: String(id), ...data });
