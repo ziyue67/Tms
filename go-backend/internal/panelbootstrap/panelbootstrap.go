@@ -7,8 +7,9 @@ package panelbootstrap
 
 import (
 	"context"
-	"strings"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/ziyue67/tms/go-backend/internal/paneldefaults"
 	"github.com/ziyue67/tms/go-backend/internal/store"
@@ -22,13 +23,16 @@ type Store interface {
 	RulesetByName(context.Context, string) (store.Ruleset, error)
 	CreateRuleset(context.Context, store.RulesetInput) (store.Ruleset, error)
 	MarkRulesetFetched(context.Context, int64, string, string) error
+	SubscribeLinks(context.Context) ([]store.SubscribeLink, error)
+	CreateSubscribeLink(context.Context, store.LinkInput) (store.SubscribeLink, error)
 }
 
 // Result 播种结果,只用于打日志。
 type Result struct {
-	TemplatesAdded int
-	RulesetsAdded  int
-	DefaultFixed   bool
+	TemplatesAdded   int
+	RulesetsAdded    int
+	DefaultFixed     bool
+	GlobalSetCreated bool
 }
 
 // Seed 幂等:同名模板/规则集已存在就跳过 —— 管理员改过的内容不会被升级覆盖。
@@ -94,7 +98,55 @@ func Seed(ctx context.Context, s Store) (Result, error) {
 		}
 		result.RulesetsAdded++
 	}
+
+	// 库里一条订阅链接都没有时,预置一个「全局订阅规则」订阅集:
+	// 这样用户的「我的订阅 → Clash 订阅」开箱就有模板和规则,不用管理员先建一条。
+	// 只在完全空表时创建 —— 管理员删掉后不会再被重新塞回来。
+	links, err := s.SubscribeLinks(ctx)
+	if err != nil {
+		return result, fmt.Errorf("检查订阅链接: %w", err)
+	}
+	if len(links) == 0 {
+		if err := seedGlobalSet(ctx, s); err != nil {
+			return result, err
+		}
+		result.GlobalSetCreated = true
+	}
 	return result, nil
+}
+
+// seedGlobalSet 用内置默认模板 + 均衡规则(7 类)建一条订阅集。
+func seedGlobalSet(ctx context.Context, s Store) error {
+	template, err := s.SubscribeTemplateByName(ctx, "fake_ip__v3.yaml")
+	if err != nil || template.ID == 0 {
+		return nil // 模板都没播上就别硬建了
+	}
+	wanted := map[string]bool{
+		"广告拦截": true, "国内直连": true, "私有网络": true,
+		"谷歌服务": true, "油管视频": true, "Github": true, "苹果服务": true,
+	}
+	ids := []string{}
+	for _, category := range paneldefaults.Rulesets() {
+		if !wanted[category.DisplayName] {
+			continue
+		}
+		ruleset, err := s.RulesetByName(ctx, category.Name)
+		if err != nil || ruleset.ID == 0 {
+			continue
+		}
+		ids = append(ids, strconv.FormatInt(ruleset.ID, 10))
+	}
+	_, err = s.CreateSubscribeLink(ctx, store.LinkInput{
+		Name:       "全局订阅规则",
+		Format:     "clash",
+		TemplateID: template.ID,
+		RulesetIDs: strings.Join(ids, ","),
+		Shared:     1,
+	})
+	if err != nil {
+		return fmt.Errorf("预置全局订阅规则: %w", err)
+	}
+	return nil
 }
 
 // isDuplicateKey 判断唯一键冲突。MySQL 1062 / PostgreSQL 23505 / SQLite 都覆盖。
