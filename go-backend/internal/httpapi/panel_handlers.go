@@ -45,9 +45,37 @@ import (
 var rulesetNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // panelRequest 统一的 {id} 请求体。
+//
+// ID 用 flexInt64 而不是 int64:前端为了避免 64 位 id 在 JS 里丢精度,一律传字符串
+// ("id":"12"),直接按 int64 解会报「请求参数格式错误」。两种写法都收。
 type panelIDRequest struct {
-	ID int64 `json:"id"`
+	ID flexInt64 `json:"id"`
 }
+
+// flexInt64 同时接受 JSON 数字与数字字符串。
+type flexInt64 int64
+
+func (f *flexInt64) UnmarshalJSON(data []byte) error {
+	text := strings.TrimSpace(string(data))
+	if text == "" || text == "null" {
+		*f = 0
+		return nil
+	}
+	text = strings.Trim(text, `"`)
+	if text == "" {
+		*f = 0
+		return nil
+	}
+	value, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		return fmt.Errorf("id 必须是整数")
+	}
+	*f = flexInt64(value)
+	return nil
+}
+
+// value 取回 int64,调用处保持原来的签名。
+func (r panelIDRequest) value() int64 { return int64(r.ID) }
 
 func writePanelError(w http.ResponseWriter, message string) {
 	writeResponse(w, Failure(message))
@@ -69,7 +97,7 @@ func (a *API) panelRulesetGet(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	item, content, err := a.store.RulesetByID(r.Context(), req.ID)
+	item, content, err := a.store.RulesetByID(r.Context(), req.value())
 	if err != nil {
 		writePanelError(w, "规则集不存在")
 		return
@@ -137,7 +165,7 @@ func (a *API) panelRulesetUpdate(w http.ResponseWriter, r *http.Request) {
 		writePanelError(w, msg)
 		return
 	}
-	item, err := a.store.UpdateRuleset(r.Context(), req.ID, req.RulesetInput)
+	item, err := a.store.UpdateRuleset(r.Context(), req.value(), req.RulesetInput)
 	if err != nil {
 		writePanelError(w, "更新规则集失败: "+err.Error())
 		return
@@ -150,7 +178,7 @@ func (a *API) panelRulesetDelete(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := a.store.DeleteRuleset(r.Context(), req.ID); err != nil {
+	if err := a.store.DeleteRuleset(r.Context(), req.value()); err != nil {
 		writePanelError(w, "删除规则集失败: "+err.Error())
 		return
 	}
@@ -187,7 +215,7 @@ func (a *API) panelRulesetRefresh(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	item, _, err := a.store.RulesetByID(r.Context(), req.ID)
+	item, _, err := a.store.RulesetByID(r.Context(), req.value())
 	if err != nil {
 		writePanelError(w, "规则集不存在")
 		return
@@ -197,7 +225,7 @@ func (a *API) panelRulesetRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	content, fetchErr := fetchRulesetRemote(r.Context(), item.RemoteURL)
-	if err := a.store.MarkRulesetFetched(r.Context(), req.ID, content, errString(fetchErr)); err != nil {
+	if err := a.store.MarkRulesetFetched(r.Context(), req.value(), content, errString(fetchErr)); err != nil {
 		writePanelError(w, "保存抓取结果失败: "+err.Error())
 		return
 	}
@@ -273,7 +301,7 @@ func (a *API) panelTemplateGet(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	item, err := a.store.SubscribeTemplateByID(r.Context(), req.ID)
+	item, err := a.store.SubscribeTemplateByID(r.Context(), req.value())
 	if err != nil {
 		writePanelError(w, "模板不存在")
 		return
@@ -310,7 +338,7 @@ func (a *API) panelTemplateUpdate(w http.ResponseWriter, r *http.Request) {
 		writePanelError(w, msg)
 		return
 	}
-	item, err := a.store.UpdateSubscribeTemplate(r.Context(), req.ID, req.TemplateInput)
+	item, err := a.store.UpdateSubscribeTemplate(r.Context(), req.value(), req.TemplateInput)
 	if err != nil {
 		writePanelError(w, "更新模板失败: "+err.Error())
 		return
@@ -323,7 +351,7 @@ func (a *API) panelTemplateDelete(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := a.store.DeleteSubscribeTemplate(r.Context(), req.ID); err != nil {
+	if err := a.store.DeleteSubscribeTemplate(r.Context(), req.value()); err != nil {
 		writePanelError(w, "删除模板失败: "+err.Error())
 		return
 	}
@@ -336,11 +364,11 @@ func (a *API) panelTemplateSetDefault(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if _, err := a.store.SubscribeTemplateByID(r.Context(), req.ID); err != nil {
+	if _, err := a.store.SubscribeTemplateByID(r.Context(), req.value()); err != nil {
 		writePanelError(w, "模板不存在")
 		return
 	}
-	if err := a.store.SetSubscribeTemplateDefault(r.Context(), req.ID); err != nil {
+	if err := a.store.SetSubscribeTemplateDefault(r.Context(), req.value()); err != nil {
 		writePanelError(w, "设置默认模板失败: "+err.Error())
 		return
 	}
@@ -354,7 +382,7 @@ func (a *API) panelTemplateReset(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	item, err := a.store.SubscribeTemplateByID(r.Context(), req.ID)
+	item, err := a.store.SubscribeTemplateByID(r.Context(), req.value())
 	if err != nil {
 		writePanelError(w, "模板不存在")
 		return
@@ -434,7 +462,7 @@ func (a *API) panelLinkUpdate(w http.ResponseWriter, r *http.Request) {
 		writePanelError(w, msg)
 		return
 	}
-	item, err := a.store.UpdateSubscribeLink(r.Context(), req.ID, req.LinkInput)
+	item, err := a.store.UpdateSubscribeLink(r.Context(), req.value(), req.LinkInput)
 	if err != nil {
 		writePanelError(w, "更新订阅链接失败: "+err.Error())
 		return
@@ -447,7 +475,7 @@ func (a *API) panelLinkResetToken(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	token, err := a.store.ResetSubscribeLinkToken(r.Context(), req.ID)
+	token, err := a.store.ResetSubscribeLinkToken(r.Context(), req.value())
 	if err != nil {
 		writePanelError(w, "重置失败: "+err.Error())
 		return
@@ -460,7 +488,7 @@ func (a *API) panelLinkDelete(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := a.store.DeleteSubscribeLink(r.Context(), req.ID); err != nil {
+	if err := a.store.DeleteSubscribeLink(r.Context(), req.value()); err != nil {
 		writePanelError(w, "删除订阅链接失败: "+err.Error())
 		return
 	}

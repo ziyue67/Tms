@@ -185,3 +185,23 @@ func TestPanelOutputFallsBackForLegacyLink(t *testing.T) {
 		t.Fatal("查不到车友的老链接应该返回不可用")
 	}
 }
+
+// 前端为避免 64 位精度丢失会把 id 当字符串传,两种写法都要能解。
+func TestPanelIDAcceptsStringAndNumber(t *testing.T) {
+	for _, body := range []string{`{"id":"12"}`, `{"id":12}`} {
+		var req panelIDRequest
+		if err := json.Unmarshal([]byte(body), &req); err != nil {
+			t.Fatalf("%s 解析失败: %v", body, err)
+		}
+		if req.value() != 12 {
+			t.Fatalf("%s 解析成 %d,应为 12", body, req.value())
+		}
+	}
+	var req panelIDRequest
+	if err := json.Unmarshal([]byte(`{"id":"abc"}`), &req); err == nil {
+		t.Fatal("非法 id 应该报错")
+	}
+	if err := json.Unmarshal([]byte(`{}`), &req); err != nil || req.value() != 0 {
+		t.Fatal("缺 id 应按 0 处理")
+	}
+}

@@ -47,15 +47,25 @@ interface FormState {
   name: string;
   format: "clash" | "v2ray" | "singbox";
   mode: "template" | "custom";
+  /** 自定义规则时套用的方案:均衡(全选)/只拦广告/手动 */
+  preset: "balanced" | "ads" | "manual";
   templateId: string;
   rulesetIds: string[];
   nodeIds: string[];
 }
 
+const PRESETS: { key: FormState["preset"]; label: string; hint: string }[] = [
+  { key: "balanced", label: "均衡规则(推荐)", hint: "自动勾上全部规则集,可以再手动增减" },
+  { key: "ads", label: "只拦广告", hint: "只勾广告拦截类规则集" },
+  { key: "manual", label: "手动选择", hint: "自己决定勾哪些" },
+];
+
 const EMPTY_FORM: FormState = {
   name: "",
   format: "clash",
-  mode: "template",
+  // 参考面板默认就是「自定义规则 + 均衡规则(推荐)」,这里保持一致
+  mode: "custom",
+  preset: "balanced",
   templateId: "",
   rulesetIds: [],
   nodeIds: [],
@@ -103,6 +113,31 @@ export default function SubscribeLinksPage() {
 
   const enabledNodes = useMemo(() => nodes.filter((node) => node.status === 1), [nodes]);
 
+  // 方案 -> 规则集 id 列表
+  const presetIDs = useCallback(
+    (preset: FormState["preset"]) => {
+      if (preset === "balanced") return rulesets.map((item) => String(item.id));
+      if (preset === "ads") {
+        return rulesets
+          .filter((item) => /广告|拦截|ad/i.test(`${item.displayName || ""}${item.name}`))
+          .map((item) => String(item.id));
+      }
+      return [];
+    },
+    [rulesets]
+  );
+
+  // 规则集加载完(或切到自定义规则)时,把「均衡规则」的方案真正勾上
+  useEffect(() => {
+    if (form.mode !== "custom" || form.preset !== "balanced" || rulesets.length === 0) return;
+    const ids = presetIDs("balanced");
+    setForm((prev) =>
+      prev.mode === "custom" && prev.preset === "balanced" && prev.rulesetIds.length !== ids.length
+        ? { ...prev, rulesetIds: ids }
+        : prev
+    );
+  }, [form.mode, form.preset, presetIDs, rulesets.length]);
+
   const defaultTemplateId = useMemo(() => {
     const byDefault = templates.find((tpl) => tpl.isDefault === 1);
     return byDefault ? String(byDefault.id) : "";
@@ -110,7 +145,8 @@ export default function SubscribeLinksPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ ...EMPTY_FORM, templateId: defaultTemplateId });
+    // 直接把「均衡规则」勾上:effect 依赖没变时不会重跑,不能指望它兜底
+    setForm({ ...EMPTY_FORM, templateId: defaultTemplateId, rulesetIds: presetIDs("balanced") });
     setView("create");
   };
 
@@ -120,6 +156,7 @@ export default function SubscribeLinksPage() {
       name: item.name,
       format: (item.format as FormState["format"]) || "clash",
       mode: item.rulesetIds ? "custom" : "template",
+      preset: "manual",
       templateId: item.templateId ? String(item.templateId) : "",
       rulesetIds: item.rulesetIds ? item.rulesetIds.split(",").filter(Boolean) : [],
       nodeIds: item.nodeIds ? item.nodeIds.split(",").filter(Boolean) : [],
@@ -366,7 +403,14 @@ export default function SubscribeLinksPage() {
                         : "border-default-200 hover:bg-default-50 dark:hover:bg-default-100/10")
                     }
                     type="button"
-                    onClick={() => setForm({ ...form, mode: entry.key as FormState["mode"] })}
+                    onClick={() => {
+                      const mode = entry.key as FormState["mode"];
+                      setForm((prev) =>
+                        mode === "custom"
+                          ? { ...prev, mode, preset: "balanced", rulesetIds: presetIDs("balanced") }
+                          : { ...prev, mode }
+                      );
+                    }}
                   >
                     <div className={"text-sm " + (active ? "font-medium text-primary" : "")}>{entry.label}</div>
                     <div className="text-[11px] text-default-400">{entry.hint}</div>
@@ -377,7 +421,12 @@ export default function SubscribeLinksPage() {
           </div>
 
           <div>
-            <div className="mb-2 text-sm font-medium">规则选择</div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium">规则选择</span>
+              {form.mode === "custom" && (
+                <span className="text-xs text-default-400">已选择 {form.rulesetIds.length} 个规则集</span>
+              )}
+            </div>
             {form.mode === "template" ? (
               <Select
                 label="订阅模板"
@@ -397,21 +446,41 @@ export default function SubscribeLinksPage() {
                 还没有规则集,先去「规则集」新建。
               </div>
             ) : (
-              <div className="grid max-h-52 grid-cols-1 gap-1 overflow-auto rounded-medium border border-default-200 p-2 sm:grid-cols-2 lg:grid-cols-3">
-                {rulesets.map((ruleset) => (
-                  <label
-                    key={ruleset.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-small px-2 py-1.5 text-sm hover:bg-default-50 dark:hover:bg-default-100/10"
-                  >
-                    <input
-                      checked={form.rulesetIds.includes(String(ruleset.id))}
-                      className="h-4 w-4 accent-primary"
-                      type="checkbox"
-                      onChange={() => toggleRuleset(String(ruleset.id))}
-                    />
-                    <span className="flex-1 truncate">{ruleset.displayName || ruleset.name}</span>
-                  </label>
-                ))}
+              <div className="flex flex-col gap-2">
+                <Select
+                  label="规则方案"
+                  selectedKeys={[form.preset]}
+                  onSelectionChange={(keys) => {
+                    const preset = Array.from(keys)[0] as FormState["preset"];
+                    setForm((prev) => ({ ...prev, preset, rulesetIds: presetIDs(preset) }));
+                  }}
+                >
+                  {PRESETS.map((entry) => (
+                    <SelectItem key={entry.key}>{entry.label}</SelectItem>
+                  ))}
+                </Select>
+                <div className="text-[11px] text-default-400">
+                  {PRESETS.find((entry) => entry.key === form.preset)?.hint}
+                </div>
+                <div className="grid max-h-52 grid-cols-1 gap-1 overflow-auto rounded-medium border border-default-200 p-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {rulesets.map((ruleset) => (
+                    <label
+                      key={ruleset.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-small px-2 py-1.5 text-sm hover:bg-default-50 dark:hover:bg-default-100/10"
+                    >
+                      <input
+                        checked={form.rulesetIds.includes(String(ruleset.id))}
+                        className="h-4 w-4 accent-primary"
+                        type="checkbox"
+                        onChange={() => {
+                          toggleRuleset(String(ruleset.id));
+                          setForm((prev) => ({ ...prev, preset: "manual" }));
+                        }}
+                      />
+                      <span className="flex-1 truncate">{ruleset.displayName || ruleset.name}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -427,7 +496,9 @@ export default function SubscribeLinksPage() {
       <div className="flex items-center justify-end gap-2">
         <Button
           variant="light"
-          onPress={() => setForm({ ...EMPTY_FORM, templateId: defaultTemplateId, name: form.name })}
+          onPress={() =>
+            setForm({ ...EMPTY_FORM, templateId: defaultTemplateId, name: form.name, rulesetIds: presetIDs("balanced") })
+          }
         >
           清空
         </Button>
