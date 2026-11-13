@@ -130,3 +130,29 @@ func TestSeedRestoresMissingDefault(t *testing.T) {
 		t.Fatal("默认模板没有被补回来")
 	}
 }
+
+// 判重时字段扫失败(老库 NULL 列)会误判「不存在」;此时插入撞唯一键要能跳过,
+// 不能把剩下 26 个分类全拦住(线上 PostgreSQL 就是这样报 23505 的)。
+type duplicateStore struct{ *fakeStore }
+
+func (d *duplicateStore) RulesetByName(context.Context, string) (store.Ruleset, error) {
+	return store.Ruleset{}, errors.New("扫描失败")
+}
+
+func (d *duplicateStore) CreateRuleset(context.Context, store.RulesetInput) (store.Ruleset, error) {
+	return store.Ruleset{}, errors.New(`ERROR: duplicate key value violates unique constraint "ruleset_name_key" (SQLSTATE 23505)`)
+}
+
+func TestSeedSkipsDuplicateRuleset(t *testing.T) {
+	store := &duplicateStore{newFakeStore()}
+	result, err := Seed(context.Background(), store)
+	if err != nil {
+		t.Fatalf("撞唯一键不该让播种失败: %v", err)
+	}
+	if result.RulesetsAdded != 0 {
+		t.Fatalf("重复的不该计入新增: %d", result.RulesetsAdded)
+	}
+	if result.TemplatesAdded == 0 {
+		t.Fatal("模板应该照常播种")
+	}
+}
