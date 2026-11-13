@@ -44,6 +44,8 @@ export const getAdminPaymentOrders = () => Network.get("/admin/subscription/orde
 export const retryAdminPaymentOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/retry`);
 export const completeAdminTestOrder = (orderNo: string) => Network.post(`/admin/subscription/orders/${orderNo}/complete-test`);
 export const getCustomNodes = () => Network.get("/custom-nodes");
+/** 把管理员账号名下的线路(协议机/中转)一键同步成公共节点,写入节点管理 */
+export const syncPanelNodes = () => Network.post("/panel/sync-nodes");
 export const importCustomNode = (name: string, link: string, visibility: "global" | "subscribers" | "users" = "subscribers", userIds: number[] = [], ingressNodeId?: number | null, sni?: string) =>
   Network.post("/custom-nodes", { name, link, visibility, userIds, ingressNodeId, sni });
 export const importCustomNodes = (name: string, links: string[], visibility: "global" | "subscribers" | "users" = "subscribers", userIds: number[] = [], ingressNodeId?: number | null, sni?: string) =>

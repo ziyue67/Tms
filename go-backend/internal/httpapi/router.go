@@ -309,6 +309,7 @@ func New(dependencies Dependencies) http.Handler {
 
 				// 妙妙屋四面板(转发管理复用既有 /forward /tunnel /landing;这里是其余三块)
 				admin.Post("/panel/seed-defaults", api.panelSeedDefaults)
+				admin.Post("/panel/sync-nodes", api.syncPanelNodes)
 				admin.Post("/panel/ruleset/list", api.panelRulesetList)
 				admin.Post("/panel/ruleset/get", api.panelRulesetGet)
 				admin.Post("/panel/ruleset/create", api.panelRulesetCreate)

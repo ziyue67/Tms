@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/ziyue67/tms/go-backend/internal/panelbootstrap"
 	"github.com/ziyue67/tms/go-backend/internal/paneldefaults"
+	"github.com/ziyue67/tms/go-backend/internal/sharelink"
 	"github.com/ziyue67/tms/go-backend/internal/store"
 )
 
@@ -1515,4 +1516,98 @@ func rewriteRulePolicy(line, groupName string) string {
 	}
 	parts[2] = groupName
 	return strings.Join(parts, ",")
+}
+
+// syncPanelNodes 把「管理员账号名下的线路」一键同步成公共节点:
+// 协议管理 / 中转 的线路是每用户凭证,不能直接当公共节点;但这个面板的使用模型是
+// 所有车友公平共用同一批线路,所以拿管理员订阅里的线路生成分享链接写入节点管理,
+// 之后它们就和手动导入的节点一样,可以在订阅链接里随便分组。
+// 幂等:同名节点会更新链接,不会越点越多。
+func (a *API) syncPanelNodes(w http.ResponseWriter, r *http.Request) {
+	users, err := a.store.Users(r.Context())
+	if err != nil {
+		writePanelError(w, "读取用户失败: "+err.Error())
+		return
+	}
+	adminID := int64(1)
+	for _, user := range users {
+		if user.RoleID == 0 {
+			adminID = user.ID
+			break
+		}
+	}
+	output, err := a.store.SubscriptionByUserID(r.Context(), adminID)
+	if err != nil {
+		writePanelError(w, "读取管理员线路失败: "+err.Error())
+		return
+	}
+	links := buildSubscriptionLinks(output)
+	if len(links) == 0 {
+		writePanelError(w, "管理员账号下没有可同步的线路,先在协议管理/中转里建好并分配")
+		return
+	}
+	existing, err := a.store.QueryMaps(r.Context(), "SELECT id,name,raw_link FROM custom_node")
+	if err != nil {
+		writePanelError(w, "读取现有节点失败: "+err.Error())
+		return
+	}
+	idByName := map[string]int64{}
+	linkByName := map[string]string{}
+	for _, row := range existing {
+		name := fmt.Sprint(row["name"])
+		idByName[name] = toInt64(row["id"])
+		linkByName[name] = fmt.Sprint(row["raw_link"])
+	}
+	now := time.Now().UnixMilli()
+	created, updated, failed := 0, 0, 0
+	failMsg := ""
+	for _, link := range links {
+		parsed, err := sharelink.Parse(link)
+		if err != nil {
+			failed++
+			failMsg = err.Error()
+			continue
+		}
+		name := parsed.Name
+		if name == "" {
+			name = "面板节点 " + strings.ToUpper(parsed.Protocol)
+		}
+		encoded, _ := json.Marshal(parsed.Values)
+		if id, exists := idByName[name]; exists {
+			if linkByName[name] == parsed.Raw {
+				continue // 内容没变,跳过
+			}
+			if err := a.store.UpdateMap(r.Context(), "custom_node", id, map[string]any{"raw_link": parsed.Raw, "parsed_json": string(encoded), "updated_time": now}); err != nil {
+				failed++
+				failMsg = err.Error()
+				continue
+			}
+			updated++
+			continue
+		}
+		if _, err := a.store.InsertMap(r.Context(), "custom_node", map[string]any{"name": name, "protocol": parsed.Protocol, "raw_link": parsed.Raw, "parsed_json": string(encoded), "visibility": "global", "status": 1, "created_time": now, "updated_time": now}); err != nil {
+			failed++
+			failMsg = err.Error()
+			continue
+		}
+		created++
+	}
+	result := map[string]any{"created": created, "updated": updated, "total": len(links)}
+	if failed > 0 {
+		result["failed"] = failed
+		result["error"] = failMsg
+	}
+	writeResponse(w, OK(result))
+}
+
+func toInt64(value any) int64 {
+	switch v := value.(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	}
+	return 0
 }
