@@ -251,6 +251,8 @@ export interface PanelLink {
   rulesetIds: string;
   /** 逗号分隔的 custom_node.id(64 位雪花 id,始终当字符串处理) */
   nodeIds: string;
+  /** 非 0 = 输出该账号自己的节点(用户自建订阅) */
+  userId?: number;
   expireAt: number;
   visitCount: number;
   status: number;
@@ -270,3 +272,14 @@ export const createPanelLink = (data: PanelLinkPayload) => Network.post("/panel/
 export const updatePanelLink = (id: number | string, data: PanelLinkPayload) => Network.post("/panel/link/update", { id: String(id), ...data });
 export const resetPanelLinkToken = (id: number | string) => Network.post("/panel/link/reset-token", { id: String(id) });
 export const deletePanelLink = (id: number | string) => Network.post("/panel/link/delete", { id: String(id) });
+
+// 用户自己的订阅链接(节点固定取自己账号的)
+export const getMyPanelLinks = () => Network.post("/my/panel-link/list");
+export const createMyPanelLink = (data: PanelLinkPayload) => Network.post("/my/panel-link/create", data);
+export const updateMyPanelLink = (id: number | string, data: PanelLinkPayload) =>
+  Network.post("/my/panel-link/update", { id: String(id), ...data });
+export const deleteMyPanelLink = (id: number | string) => Network.post("/my/panel-link/delete", { id: String(id) });
+export const resetMyPanelLinkToken = (id: number | string) =>
+  Network.post("/my/panel-link/reset-token", { id: String(id) });
+export const getMyPanelOptions = () =>
+  Network.post("/my/panel-options") as Promise<{ code: number; msg: string; data: { templates: PanelTemplate[]; rulesets: PanelRuleset[] } }>;

@@ -201,6 +201,7 @@ export default function TemplatesPage() {
 
   const [previewItem, setPreviewItem] = useState<PanelTemplate | null>(null);
   const [previewContent, setPreviewContent] = useState("");
+  const [previewError, setPreviewError] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -246,7 +247,7 @@ export default function TemplatesPage() {
     editor.onOpen();
     try {
       const res = await getPanelTemplate(item.id);
-      if (res.code === 0) setContent(res.data?.content || "");
+      if (res.code === 0 && res.data) setContent(res.data.content || "");
       else toast.error(res.msg || "读取模板内容失败");
     } catch {
       toast.error("读取模板内容失败");
@@ -257,12 +258,14 @@ export default function TemplatesPage() {
   const openPreview = async (item: PanelTemplate) => {
     setPreviewItem(item);
     setPreviewContent("");
+    setPreviewError("");
     preview.onOpen();
     try {
       const res = await getPanelTemplate(item.id);
-      if (res.code === 0) setPreviewContent(res.data?.content || "");
+      if (res.code === 0 && res.data) setPreviewContent(res.data.content || "");
+      else setPreviewError(res.msg || "读取模板内容失败");
     } catch {
-      toast.error("读取模板内容失败");
+      setPreviewError("读取模板内容失败,检查网络或面板版本");
     }
   };
 
@@ -666,7 +669,11 @@ export default function TemplatesPage() {
             </span>
           </ModalHeader>
           <ModalBody>
-            {previewContent ? (
+            {previewError ? (
+              <div className="rounded-medium bg-danger-50 px-3 py-6 text-center text-sm text-danger dark:bg-danger/10">
+                {previewError}
+              </div>
+            ) : previewContent ? (
               <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all rounded-medium bg-default-100/60 p-3 font-mono text-xs leading-relaxed dark:bg-default-100/10">
                 {previewContent}
               </pre>

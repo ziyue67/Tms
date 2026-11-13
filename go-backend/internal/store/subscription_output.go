@@ -63,6 +63,23 @@ func (s *Store) SubscriptionByToken(ctx context.Context, token string) (Subscrip
 			return output, err
 		}
 	}
+	return s.subscriptionForUser(ctx, user, token, output.Aggregate)
+}
+
+// SubscriptionByUserID 按账号直接取「他自己的全部节点」订阅 —— 用户自建订阅链接用。
+// 面板链接如果绑了 user_id,就靠这个渲染,不再依赖 token 猜人。
+func (s *Store) SubscriptionByUserID(ctx context.Context, userID int64) (SubscriptionOutput, error) {
+	user, err := s.UserByID(ctx, userID)
+	if err != nil {
+		return SubscriptionOutput{}, err
+	}
+	return s.subscriptionForUser(ctx, user, "", true)
+}
+
+// subscriptionForUser 把「账号 + 它的线路 / 自定义节点」拼成订阅输出。
+// token 非空且 aggregate=false 时按线路的 sub_token 过滤。
+func (s *Store) subscriptionForUser(ctx context.Context, user User, token string, aggregate bool) (SubscriptionOutput, error) {
+	output := SubscriptionOutput{Usable: true, Aggregate: aggregate, Entries: []SubscriptionEntry{}, CustomLinks: []string{}, CustomParsed: []map[string]any{}}
 	output.UserID, output.RoleID = user.ID, user.RoleID
 	output.Upload, output.Download = max(int64(0), user.OutboundFlow), max(int64(0), user.InboundFlow)
 	output.Total = max(int64(0), user.Flow) * 1024 * 1024 * 1024

@@ -25,6 +25,7 @@ type fakeStore struct {
 	updatedConfigMap map[string]string
 	queryMaps        func(context.Context, string, ...any) ([]map[string]any, error)
 	panelNodes       []store.PanelNode
+	userOutput       store.SubscriptionOutput
 }
 
 func (s *fakeStore) Ping(context.Context) error { return nil }
@@ -218,6 +219,9 @@ func (s *fakeStore) UpdateSubscribeTemplate(context.Context, int64, store.Templa
 	return store.SubscribeTemplate{}, nil
 }
 func (s *fakeStore) DeleteSubscribeTemplate(context.Context, int64) error { return nil }
+func (s *fakeStore) SubscriptionByUserID(context.Context, int64) (store.SubscriptionOutput, error) {
+	return s.userOutput, nil
+}
 func (s *fakeStore) PanelNodesByIDs(context.Context, []int64) ([]store.PanelNode, error) {
 	return s.panelNodes, nil
 }
