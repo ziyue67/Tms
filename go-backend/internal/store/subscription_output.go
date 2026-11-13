@@ -35,6 +35,8 @@ type SubscriptionOutput struct {
 	Entries      []SubscriptionEntry
 	CustomLinks  []string
 	CustomParsed []map[string]any
+	// GroupNodes 分组订阅用:节点 id → 节点名,渲染分组策略组时按 id 找名字。
+	GroupNodes map[int64]string
 }
 
 func (s *Store) SubscriptionByToken(ctx context.Context, token string) (SubscriptionOutput, error) {

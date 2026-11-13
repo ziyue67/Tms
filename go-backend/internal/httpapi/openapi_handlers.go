@@ -45,7 +45,7 @@ func (a *API) openClashSubscription(w http.ResponseWriter, r *http.Request) {
 	if set, ok := a.firstSharedSet(r.Context()); ok {
 		link := store.SubscribeLink{TemplateID: set.TemplateID, RulesetIDs: set.RulesetIDs}
 		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
-		_, _ = w.Write([]byte(renderPanelClashYAML(r.Context(), a.store, link, proxies)))
+		_, _ = w.Write([]byte(renderPanelClashYAML(r.Context(), a.store, link, proxies, nil)))
 		return
 	}
 	names := make([]string, 0, len(proxies))
