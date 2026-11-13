@@ -16,6 +16,7 @@ import {
   disableCustomNode,
   enableCustomNode,
   getCustomNodes,
+  syncPanelNodes,
   importCustomNodes,
   updateCustomNodesStatus,
 } from "@/api";
@@ -132,6 +133,22 @@ export default function NodesPage() {
     }
   };
 
+  const handleSyncPanel = async () => {
+    if (!window.confirm("把「协议管理 / 中转」里管理员名下的线路一键生成为公共节点?同名节点会更新链接,不会重复。")) return;
+    toast.loading("同步中…", { id: "sync" });
+    try {
+      const res = await syncPanelNodes();
+      if (res.code === 0) {
+        toast.success(`新增 ${res.data?.created ?? 0} 个、更新 ${res.data?.updated ?? 0} 个(共 ${res.data?.total ?? 0} 条线路)`, { id: "sync" });
+        await load();
+      } else {
+        toast.error(res.msg || "同步失败", { id: "sync" });
+      }
+    } catch {
+      toast.error("同步失败", { id: "sync" });
+    }
+  };
+
   const handleBatch = async (action: "enable" | "disable" | "delete") => {
     if (selected.length === 0) return;
     if (action === "delete" && !window.confirm(`删除选中的 ${selected.length} 个节点?`)) return;
@@ -188,6 +205,9 @@ export default function NodesPage() {
                 </Button>
               </>
             )}
+            <Button size="sm" variant="bordered" onPress={handleSyncPanel}>
+              同步面板线路
+            </Button>
             <Button color="primary" size="sm" startContent={<PlusIcon size={18} />} onPress={importer.onOpen}>
               导入节点
             </Button>
