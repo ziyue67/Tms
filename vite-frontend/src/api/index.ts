@@ -253,6 +253,8 @@ export interface PanelLink {
   nodeIds: string;
   /** 非 0 = 输出该账号自己的节点(用户自建订阅) */
   userId?: number;
+  /** 1 = 订阅集(没账号没节点),用户可以在「我的订阅链接」里套用 */
+  shared?: number;
   expireAt: number;
   visitCount: number;
   status: number;
@@ -282,4 +284,11 @@ export const deleteMyPanelLink = (id: number | string) => Network.post("/my/pane
 export const resetMyPanelLinkToken = (id: number | string) =>
   Network.post("/my/panel-link/reset-token", { id: String(id) });
 export const getMyPanelOptions = () =>
-  Network.post("/my/panel-options") as Promise<{ code: number; msg: string; data: { templates: PanelTemplate[]; rulesets: PanelRuleset[] } }>;
+  Network.post("/my/panel-options") as Promise<{
+    code: number;
+    msg: string;
+    data: { templates: PanelTemplate[]; rulesets: PanelRuleset[]; sets: PanelLink[] };
+  }>;
+/** 套用管理员建的订阅集:复制模板/规则集,绑定到自己账号 */
+export const useMyPanelSet = (id: number | string, name?: string) =>
+  Network.post("/my/panel-link/use-set", { id: String(id), name });

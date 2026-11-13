@@ -420,8 +420,16 @@ func validateLinkInput(input *store.LinkInput) string {
 	if input.UserID > 0 {
 		// 归属账号模式:节点由账号自己决定,忽略手挑的节点。
 		input.NodeIDs = ""
+		input.Shared = 0
 	} else {
 		input.NodeIDs = store.NormalizeNodeIDs(input.NodeIDs)
+		// 既没有归属账号、也没挑节点 = 一套「模板 + 规则」的定义(订阅集),
+		// 用户在「我的订阅链接」里套用后才会绑定到自己的节点。
+		if input.NodeIDs == "" {
+			input.Shared = 1
+		} else {
+			input.Shared = 0
+		}
 	}
 	if len(input.NodeIDs) > 3800 {
 		return "选中的节点太多,分几条订阅链接吧"
@@ -521,6 +529,10 @@ func (a *API) loadPanelSubscription(w http.ResponseWriter, r *http.Request) (sto
 	link, err := a.store.SubscribeLinkByToken(r.Context(), token)
 	if err != nil {
 		http.Error(w, "订阅链接无效或已过期", http.StatusNotFound)
+		return link, store.SubscriptionOutput{}, false
+	}
+	if link.Shared == 1 {
+		http.Error(w, "这是订阅集,请到「我的订阅链接」里套用后再拉取", http.StatusForbidden)
 		return link, store.SubscriptionOutput{}, false
 	}
 	output, ok := a.panelOutputFor(r.Context(), link)
@@ -1194,7 +1206,71 @@ func (a *API) myPanelOptions(w http.ResponseWriter, r *http.Request) {
 		writePanelError(w, "加载规则集失败: "+err.Error())
 		return
 	}
-	writeResponse(w, OK(map[string]any{"templates": visible, "rulesets": rulesets}))
+	// 管理员建的订阅集(没有归属账号、也没有挑节点的那种)
+	links, err := a.store.SubscribeLinks(r.Context())
+	if err != nil {
+		writePanelError(w, "加载订阅集失败: "+err.Error())
+		return
+	}
+	sets := make([]store.SubscribeLink, 0)
+	for _, item := range links {
+		if item.Shared == 1 {
+			sets = append(sets, item)
+		}
+	}
+	writeResponse(w, OK(map[string]any{"templates": visible, "rulesets": rulesets, "sets": sets}))
+}
+
+// firstSharedSet 取管理员配的订阅集(没有账号、没有节点的那个链接)。
+// 它是「全局订阅规则」:所有用户原来那条订阅链接的 Clash 输出都会自动套用,
+// 用户什么都不用选。
+func (a *API) firstSharedSet(ctx context.Context) (store.SubscribeLink, bool) {
+	links, err := a.store.SubscribeLinks(ctx)
+	if err != nil {
+		return store.SubscribeLink{}, false
+	}
+	for _, item := range links {
+		if item.Shared == 1 {
+			return item, true
+		}
+	}
+	return store.SubscribeLink{}, false
+}
+
+// myPanelLinkUseSet 套用管理员建的订阅集:复制它的模板/规则集,绑定到自己账号。
+func (a *API) myPanelLinkUseSet(w http.ResponseWriter, r *http.Request) {
+	userID, ok := a.myUserID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		panelIDRequest
+		Name string `json:"name"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	set, err := a.store.SubscribeLinkByID(r.Context(), req.value())
+	if err != nil || set.Shared != 1 {
+		writePanelError(w, "订阅集不存在")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = set.Name
+	}
+	item, err := a.store.CreateSubscribeLink(r.Context(), store.LinkInput{
+		Name:       name,
+		Format:     set.Format,
+		TemplateID: set.TemplateID,
+		RulesetIDs: set.RulesetIDs,
+		UserID:     userID,
+	})
+	if err != nil {
+		writePanelError(w, "创建订阅失败: "+err.Error())
+		return
+	}
+	writeResponse(w, OK(item))
 }
 
 // panelRulesetFile 规则集公开下载:/open_api/panel-ruleset/{name}。

@@ -40,6 +40,14 @@ func (a *API) openClashSubscription(w http.ResponseWriter, r *http.Request) {
 	root := map[string]any{"mixed-port": 7890, "allow-lan": false, "mode": "rule", "log-level": "info", "external-controller": "127.0.0.1:9090",
 		"dns":     map[string]any{"enable": true, "ipv6": false, "enhanced-mode": "fake-ip", "fake-ip-range": "198.18.0.1/16", "nameserver": []string{"223.5.5.5", "119.29.29.29"}, "fallback": []string{"8.8.8.8", "1.1.1.1"}},
 		"proxies": proxies, "rules": []string{"DOMAIN-SUFFIX,local,DIRECT", "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve", "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve", "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve", "GEOIP,CN,DIRECT", "MATCH,漏网之鱼"}}
+	// 管理员在「订阅链接」里配了订阅集(模板 + 规则集)时,用户自己那条老订阅链接
+	// 直接按这套规则输出 —— 用户不用再去建一条,也不用做任何选择。
+	if set, ok := a.firstSharedSet(r.Context()); ok {
+		link := store.SubscribeLink{TemplateID: set.TemplateID, RulesetIDs: set.RulesetIDs}
+		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+		_, _ = w.Write([]byte(renderPanelClashYAML(r.Context(), a.store, link, proxies)))
+		return
+	}
 	names := make([]string, 0, len(proxies))
 	for _, proxy := range proxies {
 		names = append(names, fmt.Sprint(proxy["name"]))

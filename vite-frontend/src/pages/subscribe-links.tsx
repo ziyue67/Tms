@@ -326,6 +326,10 @@ export default function SubscribeLinksPage() {
           </div>
         </div>
         <div className="p-4">
+          <div className="mb-2 text-xs text-default-400">
+            选账号 = 只给这个账号用;不选账号也不挑节点 = 保存成 <b>订阅集(全局规则)</b>,
+            所有用户的「我的订阅」里那条 Clash 订阅链接都会自动套用这套模板和规则,用户不用做任何选择。
+          </div>
           <Select
             className="mb-3"
             label="归属账号(可选)"
@@ -739,9 +743,20 @@ export default function SubscribeLinksPage() {
                       <Chip size="sm" variant="flat">
                         {FORMAT_LABEL[item.format] || item.format}
                       </Chip>
+                      {item.shared === 1 && (
+                        <Chip color="secondary" size="sm" variant="flat">
+                          订阅集
+                        </Chip>
+                      )}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-default-400">
-                      <span>{item.userId ? `归属 ${ownerName(item)}` : `${nodeCount(item)} 个节点`}</span>
+                      <span>
+                        {item.userId
+                          ? `归属 ${ownerName(item)}`
+                          : item.shared === 1
+                            ? "订阅集(用户可套用)"
+                            : `${nodeCount(item)} 个节点`}
+                      </span>
                       <span>{templateName(item)}</span>
                       <span>{rulesetCount(item)} 条规则集</span>
                       <span>访问 {item.visitCount}</span>
@@ -751,20 +766,28 @@ export default function SubscribeLinksPage() {
                     <CopyIcon size={16} />
                   </Button>
                 </div>
-                <Snippet
-                  classNames={{ base: "bg-default-100/60", pre: "text-[11px] break-all whitespace-pre-wrap" }}
-                  hideSymbol
-                  size="sm"
-                >
-                  {subUrl(item.token)}
-                </Snippet>
+                {item.shared === 1 ? (
+                  <div className="rounded-medium bg-secondary/5 px-3 py-2 text-xs text-default-500">
+                    这是全局订阅集:它本身不输出节点,但所有用户的「我的订阅 → Clash 订阅」会自动套用这套模板和规则。
+                  </div>
+                ) : (
+                  <Snippet
+                    classNames={{ base: "bg-default-100/60", pre: "text-[11px] break-all whitespace-pre-wrap" }}
+                    hideSymbol
+                    size="sm"
+                  >
+                    {subUrl(item.token)}
+                  </Snippet>
+                )}
                 <div className="flex items-center justify-end gap-1">
                   <Button size="sm" variant="light" onPress={() => openEdit(item)}>
                     编辑
                   </Button>
-                  <Button color="warning" size="sm" variant="light" onPress={() => handleResetToken(item)}>
-                    重置 token
-                  </Button>
+                  {item.shared !== 1 && (
+                    <Button color="warning" size="sm" variant="light" onPress={() => handleResetToken(item)}>
+                      重置 token
+                    </Button>
+                  )}
                   <Button color="danger" size="sm" variant="light" onPress={() => handleDelete(item)}>
                     删除
                   </Button>

@@ -26,6 +26,7 @@ type fakeStore struct {
 	queryMaps        func(context.Context, string, ...any) ([]map[string]any, error)
 	panelNodes       []store.PanelNode
 	userOutput       store.SubscriptionOutput
+	links            []store.SubscribeLink
 }
 
 func (s *fakeStore) Ping(context.Context) error { return nil }
@@ -231,6 +232,9 @@ func (s *fakeStore) SetSubscribeTemplateDefault(context.Context, int64) error {
 func (s *fakeStore) ResetSubscribeTemplateContent(context.Context, int64, string) error { return nil }
 func (s *fakeStore) DefaultTemplateID(context.Context) (int64, error)                   { return 0, nil }
 func (s *fakeStore) SubscribeLinks(context.Context) ([]store.SubscribeLink, error) {
+	if s.links != nil {
+		return s.links, nil
+	}
 	return []store.SubscribeLink{}, nil
 }
 func (s *fakeStore) SubscribeLinkByID(context.Context, int64) (store.SubscribeLink, error) {
