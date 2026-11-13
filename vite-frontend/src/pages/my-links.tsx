@@ -15,6 +15,7 @@ import {
   getMyPanelLinks,
   getMyPanelOptions,
   resetMyPanelLinkToken,
+  useMyPanelSet,
   updateMyPanelLink,
   type PanelLink,
   type PanelRuleset,
@@ -53,6 +54,8 @@ export default function MyLinksPage() {
   const [links, setLinks] = useState<PanelLink[]>([]);
   const [templates, setTemplates] = useState<PanelTemplate[]>([]);
   const [rulesets, setRulesets] = useState<PanelRuleset[]>([]);
+  // 管理员建的订阅集:只有模板 + 规则,套用后节点取自己的
+  const [sets, setSets] = useState<PanelLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"list" | "create">("list");
   const [editing, setEditing] = useState<PanelLink | null>(null);
@@ -67,6 +70,7 @@ export default function MyLinksPage() {
       if (optionsRes.code === 0) {
         setTemplates(optionsRes.data?.templates || []);
         setRulesets(optionsRes.data?.rulesets || []);
+        setSets(optionsRes.data?.sets || []);
       }
     } catch {
       toast.error("加载失败");
@@ -140,6 +144,20 @@ export default function MyLinksPage() {
       toast.error("保存失败");
     }
     setSaving(false);
+  };
+
+  const handleUseSet = async (set: PanelLink) => {
+    try {
+      const res = await useMyPanelSet(set.id, set.name);
+      if (res.code === 0) {
+        toast.success(`已套用「${set.name}」,地址在下面的卡片里`);
+        await load();
+      } else {
+        toast.error(res.msg || "套用失败");
+      }
+    } catch {
+      toast.error("套用失败");
+    }
   };
 
   const subUrl = (token: string) => `${window.location.origin}/api/v1/open_api/panel/${token}`;
@@ -220,6 +238,42 @@ export default function MyLinksPage() {
           </div>
         </CardBody>
       </Card>
+
+      {sets.length > 0 && view !== "create" && (
+        <Card className="mb-4">
+          <CardBody className="gap-3">
+            <div>
+              <div className="text-sm font-medium">管理员的订阅集</div>
+              <div className="text-xs text-default-400">
+                「我的订阅」里那条 Clash 链接已经自动按这套规则输出;这里套用是额外拿到一条独立地址
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {sets.map((set) => (
+                <div
+                  key={set.id}
+                  className="flex items-center gap-3 rounded-medium border border-default-200 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{set.name}</div>
+                    <div className="text-xs text-default-400">
+                      {FORMAT_LABEL[set.format] || set.format}
+                      {" · "}
+                      {set.templateId
+                        ? templates.find((tpl) => tpl.id === set.templateId)?.name || "已绑定模板"
+                        : "默认模板"}
+                      {set.rulesetIds ? ` · ${set.rulesetIds.split(",").filter(Boolean).length} 条规则集` : ""}
+                    </div>
+                  </div>
+                  <Button color="primary" size="sm" variant="flat" onPress={() => handleUseSet(set)}>
+                    使用
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {view === "create" ? (
         <div className="flex flex-col gap-4">

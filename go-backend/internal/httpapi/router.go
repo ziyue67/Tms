@@ -226,6 +226,7 @@ func New(dependencies Dependencies) http.Handler {
 			authenticated.Post("/my/panel-link/delete", api.myPanelLinkDelete)
 			authenticated.Post("/my/panel-link/reset-token", api.myPanelLinkResetToken)
 			authenticated.Post("/my/panel-options", api.myPanelOptions)
+			authenticated.Post("/my/panel-link/use-set", api.myPanelLinkUseSet)
 			authenticated.Post("/inbound/reset-sub-token", api.resetMySubToken)
 
 			authenticated.Group(func(admin chi.Router) {

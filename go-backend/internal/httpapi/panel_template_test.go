@@ -255,3 +255,40 @@ func TestValidateLinkDropsNodesWhenOwned(t *testing.T) {
 		t.Fatalf("未绑账号时应归一化 nodeIds: %q", plain.NodeIDs)
 	}
 }
+
+// 没人没节点 = 订阅集;绑了账号或挑了节点都不是。
+func TestValidateLinkMarksSharedSet(t *testing.T) {
+	set := store.LinkInput{Name: "全家桶规则", Format: "clash"}
+	if msg := validateLinkInput(&set); msg != "" {
+		t.Fatalf("校验失败: %s", msg)
+	}
+	if set.Shared != 1 {
+		t.Fatal("没有账号也没有节点时应该是订阅集")
+	}
+	owned := store.LinkInput{Name: "车友的", Format: "clash", UserID: 3}
+	_ = validateLinkInput(&owned)
+	if owned.Shared != 0 {
+		t.Fatal("绑定账号的不该是订阅集")
+	}
+	nodes := store.LinkInput{Name: "公共节点", Format: "clash", NodeIDs: "1,2"}
+	_ = validateLinkInput(&nodes)
+	if nodes.Shared != 0 {
+		t.Fatal("挑了节点的不该是订阅集")
+	}
+}
+
+// 管理员配了订阅集(shared=1)时,firstSharedSet 能取到它;没有就返回 false。
+func TestFirstSharedSet(t *testing.T) {
+	api := &API{store: &fakeStore{links: []store.SubscribeLink{
+		{ID: 1, Name: "普通链接", Shared: 0},
+		{ID: 2, Name: "全局规则", Shared: 1, TemplateID: 3, RulesetIDs: "1,2"},
+	}}}
+	set, ok := api.firstSharedSet(context.Background())
+	if !ok || set.ID != 2 || set.TemplateID != 3 {
+		t.Fatalf("没取到订阅集: %+v %v", set, ok)
+	}
+	empty := &API{store: &fakeStore{}}
+	if _, ok := empty.firstSharedSet(context.Background()); ok {
+		t.Fatal("没有订阅集时不该返回 true")
+	}
+}
