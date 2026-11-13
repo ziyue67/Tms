@@ -394,8 +394,9 @@ func (s *Store) CreateSubscribeLink(ctx context.Context, input LinkInput) (Subsc
 		return SubscribeLink{}, err
 	}
 	now := time.Now().UnixMilli()
-	// template_id / user_id 为 0 时写 NULL;占位符顺序必须跟列顺序一致。
-	query := "INSERT INTO " + s.quote("subscribe_link") + " (" + s.columns("name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "groups_json", "expire_at", "created_time", "updated_time") + ") VALUES (?,?,?,?,?,?,?,?,?,?)"
+	// template_id / user_id 为 0 时写 NULL;占位符按列数自动生成,避免加列时数错。
+	columns := []string{"name", "token", "format", "template_id", "ruleset_ids", "node_ids", "user_id", "shared", "groups_json", "expire_at", "created_time", "updated_time"}
+	query := "INSERT INTO " + s.quote("subscribe_link") + " (" + s.columns(columns...) + ") VALUES (" + placeholders(len(columns)) + ")"
 	var templateID, userID any
 	if input.TemplateID > 0 {
 		templateID = input.TemplateID
@@ -471,6 +472,14 @@ func (s *Store) BumpSubscribeLinkVisits(ctx context.Context, id int64) error {
 	query := "UPDATE " + s.quote("subscribe_link") + " SET " + s.quote("visit_count") + "=" + s.quote("visit_count") + "+1 WHERE " + s.quote("id") + "=?"
 	_, err := s.db.ExecContext(ctx, s.bind(query), id)
 	return err
+}
+
+// placeholders 生成 "?,?,?" —— 插入语句的占位符按列数自动算,避免列加了忘了补问号。
+func placeholders(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	return strings.Repeat("?,", count-1) + "?"
 }
 
 // NormalizeNodeIDs 与 NormalizeRulesetIDs 同款,给 custom_node.id 列表用。

@@ -334,3 +334,18 @@ func TestRenderGroupClashYAML(t *testing.T) {
 		t.Fatalf("最后一条应该是 MATCH,节点选择: %v", rules)
 	}
 }
+
+// 接线测试:renderPanelClashYAML 必须把分组的 node 映射传下去,
+// 否则会静默退回默认骨架(线上就踩过:创建成功但输出没有分组)。
+func TestRenderPanelClashYAMLWiresGroups(t *testing.T) {
+	api := &API{store: &fakeStore{}}
+	groups := []store.SubscribeGroup{{Name: "日本1组", NodeIDs: []string{"1"}, RulesetIDs: []string{}}}
+	raw, _ := store.MarshalGroups(groups)
+	link := store.SubscribeLink{GroupsJSON: raw}
+	proxies := []map[string]any{{"name": "日本1", "type": "vless", "server": "1.1.1.1", "port": 443}}
+
+	out := renderPanelClashYAML(context.Background(), api.store, link, proxies, map[int64]string{1: "日本1"})
+	if !strings.Contains(out, "日本1组") {
+		t.Fatalf("分组没有生效,输出还是默认骨架:\n%s", out[:200])
+	}
+}

@@ -702,7 +702,7 @@ func (a *API) panelSubscription(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(body))
 		return
 	}
-	yaml := renderPanelClashYAML(r.Context(), a.store, link, proxies, nil)
+	yaml := renderPanelClashYAML(r.Context(), a.store, link, proxies, output.GroupNodes)
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 	w.Header().Set("Subscription-Userinfo", subscriptionUserinfo(output))
 	_, _ = w.Write([]byte(yaml))
@@ -1443,9 +1443,9 @@ func renderGroupClashYAML(groups []store.SubscribeGroup, proxies []map[string]an
 			"enable": true, "ipv6": false, "enhanced-mode": "fake-ip", "fake-ip-range": "198.18.0.1/16",
 			"nameserver": []string{"223.5.5.5", "119.29.29.29"},
 		},
-		"proxies":       proxies,
-		"proxy-groups":  groupDefs,
-		"rules":         rules,
+		"proxies":      proxies,
+		"proxy-groups": groupDefs,
+		"rules":        rules,
 	}
 	encoded, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
