@@ -216,6 +216,21 @@ func (s *Store) MarkNodeOffline(ctx context.Context, nodeID int64) (bool, error)
 	return rows > 0, err
 }
 
+// MarkAllNodesOffline 把全部节点置为离线,返回被改动的行数。
+//
+// 主控进程重启专用:节点在线状态只存在于进程内的 websocket 连接表里,
+// 进程一重启表就空了,但库里的 status=1 是上次运行留下的快照 —— 不清掉的话
+// 面板会把已经断连的机器一直显示成「在线」,而下发配置时又会报「节点不在线」,
+// 两个界面自相矛盾。启动时清一遍,agent 重连后 UpdateNodeConnection 会改回 1。
+func (s *Store) MarkAllNodesOffline(ctx context.Context) (int64, error) {
+	query := "UPDATE " + s.quote("node") + " SET " + s.quote("status") + " = 0 WHERE " + s.quote("status") + " <> 0"
+	result, err := s.db.ExecContext(ctx, s.bind(query))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func nullableString(value string) any {
 	if value == "" {
 		return nil

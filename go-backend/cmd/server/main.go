@@ -60,6 +60,14 @@ func main() {
 	tokens := auth.NewTokenService(cfg.JWTSecret, 90*24*time.Hour)
 	verificationService := verification.New(cfg.Auth, redisClient, repository, nil)
 	nodeHub := nodehub.New(repository, tokens, logger)
+	// 启动即清零在线状态:节点在线与否只由进程内的 websocket 连接决定,
+	// 重启后连接表是空的,库里的 status=1 全是上一轮残留。
+	// 不清的话面板会把已断连的机器显示成在线,下发配置时却报「节点不在线」。
+	if reset, err := repository.MarkAllNodesOffline(context.Background()); err != nil {
+		logger.Warn("reset node status on startup failed", "error", err)
+	} else if reset > 0 {
+		logger.Info("reset stale node status on startup", "nodes", reset)
+	}
 	paymentService := payment.New(repository)
 	scheduler := maintenance.New(repository, nodeHub, logger)
 	scheduler.Start(context.Background())
